@@ -57,6 +57,37 @@ def cleanup_temp_dir():
         del st.session_state["temp_dir"]
 
 
+def convert_pptx_to_pdf(pptx_path: str, pdf_path: str):
+    """
+    Convert a PowerPoint file (.pptx or .ppt) to a PDF using PowerPoint's COM interface on Windows.
+    Uses comtypes for clean, lightweight COM wrapping.
+    """
+    import sys
+    import comtypes.client
+
+    if sys.platform != "win32":
+        raise NotImplementedError("PPTX-to-PDF conversion is only supported on Windows.")
+
+    # Ensure absolute paths
+    abs_pptx = os.path.abspath(pptx_path)
+    abs_pdf = os.path.abspath(pdf_path)
+
+    # Initialize COM library
+    comtypes.CoInitialize()
+    try:
+        powerpoint = comtypes.client.CreateObject("Powerpoint.Application")
+        # Open presentation without a window
+        pres = powerpoint.Presentations.Open(abs_pptx, WithWindow=False)
+        # Format Type 32 is PDF
+        pres.SaveAs(abs_pdf, 32)
+        pres.Close()
+        powerpoint.Quit()
+    except Exception as e:
+        raise RuntimeError(f"PowerPoint COM conversion failed: {e}")
+    finally:
+        comtypes.CoUninitialize()
+
+
 def render_upload_ui() -> tuple:
     """
     Render the Streamlit file-upload widgets.
@@ -70,12 +101,12 @@ def render_upload_ui() -> tuple:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown("**📄 Lecture PDF (Slides)**")
+        st.markdown("**📄 Lecture Slides (PDF or PPTX)**")
         pdf_file = st.file_uploader(
-            label="Upload PDF",
-            type=["pdf"],
+            label="Upload Slides",
+            type=["pdf", "pptx", "ppt"],
             key="pdf_uploader",
-            help="Upload the lecture slide deck in PDF format.",
+            help="Upload the lecture slide deck (PDF or PowerPoint format).",
             label_visibility="collapsed",
         )
 
@@ -95,11 +126,26 @@ def render_upload_ui() -> tuple:
 
     if pdf_file is not None:
         ext = os.path.splitext(pdf_file.name)[1].lower()
-        if ext != ".pdf":
-            st.error("❌ Please upload a valid PDF file.")
+        if ext not in [".pdf", ".pptx", ".ppt"]:
+            st.error("❌ Please upload a valid PDF or PowerPoint file.")
         else:
-            pdf_path = save_upload(pdf_file, subdir="pdf")
-            st.success(f"✅ PDF saved: `{pdf_file.name}`")
+            if ext in [".pptx", ".ppt"]:
+                pptx_path = save_upload(pdf_file, subdir="presentation")
+                temp_dir = get_or_create_temp_dir()
+                pdf_name = os.path.splitext(pdf_file.name)[0] + ".pdf"
+                pdf_path = os.path.join(temp_dir, "pdf", pdf_name)
+                os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
+                
+                with st.spinner("⏳ Converting PowerPoint presentation to PDF..."):
+                    try:
+                        convert_pptx_to_pdf(pptx_path, pdf_path)
+                        st.success(f"✅ Converted PowerPoint to PDF: `{pdf_name}`")
+                    except Exception as e:
+                        st.error(f"❌ PowerPoint conversion failed: {e}")
+                        pdf_path = None
+            else:
+                pdf_path = save_upload(pdf_file, subdir="pdf")
+                st.success(f"✅ PDF saved: `{pdf_file.name}`")
 
     if media_file is not None:
         ext = os.path.splitext(media_file.name)[1].lower()
@@ -110,3 +156,4 @@ def render_upload_ui() -> tuple:
             st.success(f"✅ Media saved: `{media_file.name}`")
 
     return pdf_path, media_path
+

@@ -129,16 +129,20 @@ def _fmt_seconds(s: float) -> str:
 def _build_prompt(slides_text: str, chunk_transcript: str,
                   chunk_start: float, chunk_end: float) -> str:
     return f"""
-You are an expert academic assistant specializing in lecture analysis.
+You are an expert academic assistant specializing in lecture analysis and precise semantic alignment.
 
 ## YOUR TASK
 You will receive:
-1. **Slide Text Array** — the text content of every slide in a lecture PDF.
+1. **Slide Text Array** — the text content of every slide in the lecture presentation.
 2. **Transcript Chunk** — a portion of the professor's spoken lecture with timestamps.
 
-Your job is to MAP each spoken idea to the most relevant slide number and extract
-"hidden insights" — concepts the professor explained verbally that are NOT written
-on the slides.
+Your job is to MAP each spoken idea to the most relevant slide number by performing a rigorous alignment between the spoken transcript and the presentation text, and extract "hidden insights" (concepts the professor explained verbally that are NOT written on the slides).
+
+## ALIGNMENT RULES (CRITICAL)
+1. **Rigorous Text Matching**: Carefully compare the transcript text with each slide's content. Look for identical keywords, matching topics, vocabulary, formulas, or slide titles.
+2. **Precise Timestamps**: Assign a timestamp range to a slide number only if the spoken words in that range are directly explaining, referencing, or discussing the content of that specific slide.
+3. **General Fallback**: If a segment does not match any slide (e.g. general greetings, administrative announcements, casual stories), map it to slide_number 0 and slide_title "General".
+4. **Verbal Notes**: In `spoken_notes`, provide a meaningful summary (1-3 sentences) of the professor's verbal explanations for that slide — do not just quote verbatim. Focus on extra insights not written on the slide text itself.
 
 ## SLIDE TEXT ARRAY
 {slides_text}
@@ -158,11 +162,8 @@ Each element must follow this exact schema:
 }}
 
 Rules:
-- If the professor discusses multiple slides in this chunk, create one entry per slide.
-- If a segment does not match any slide, use slide_number 0 and slide_title "General".
-- spoken_notes must be a meaningful summary in 1-3 sentences — NOT a verbatim transcript.
-- All timestamps must be real values from the transcript chunk above.
 - Output ONLY the JSON array, starting with [ and ending with ].
+- If multiple slides are discussed, create one entry per slide.
 """.strip()
 
 

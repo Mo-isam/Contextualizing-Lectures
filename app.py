@@ -21,12 +21,91 @@ import json
 import time
 import streamlit as st
 import streamlit.components.v1 as components
+import shutil
 
 # ── Local modules ──────────────────────────────────────────────────────────────
 from file_manager    import render_upload_ui, get_or_create_temp_dir, cleanup_temp_dir
 from audio_processor import process_media_file
 from pdf_processor   import extract_slide_text, get_pdf_info
 from ai_aligner      import align_transcript_to_slides
+
+# ── Persistent Local Storage Helpers ───────────────────────────────────────────
+DATA_STORAGE_DIR = os.path.join(os.path.dirname(__file__), "data_storage")
+SESSIONS_DIR = os.path.join(DATA_STORAGE_DIR, "sessions")
+FILES_DIR = os.path.join(DATA_STORAGE_DIR, "files")
+
+def save_session(session_name: str, state: dict) -> str:
+    """Save the current processed lecture session to local storage."""
+    os.makedirs(SESSIONS_DIR, exist_ok=True)
+    os.makedirs(FILES_DIR, exist_ok=True)
+
+    slug = "".join([c if c.isalnum() or c in ("-", "_") else "_" for c in session_name]).strip()
+    session_id = f"{slug}_{int(time.time())}"
+
+    pdf_path = state.get("pdf_path")
+    media_path = state.get("media_path")
+    
+    saved_pdf_path = None
+    saved_media_path = None
+
+    if pdf_path and os.path.exists(pdf_path):
+        pdf_ext = os.path.splitext(pdf_path)[1]
+        saved_pdf_path = os.path.join(FILES_DIR, f"{session_id}{pdf_ext}")
+        shutil.copy2(pdf_path, saved_pdf_path)
+
+    if media_path and os.path.exists(media_path):
+        media_ext = os.path.splitext(media_path)[1]
+        saved_media_path = os.path.join(FILES_DIR, f"{session_id}{media_ext}")
+        shutil.copy2(media_path, saved_media_path)
+
+    metadata = {
+        "session_name"        : session_name,
+        "session_id"          : session_id,
+        "pdf_path"            : saved_pdf_path,
+        "media_path"          : saved_media_path,
+        "transcript_segments" : state.get("transcript_segments"),
+        "slides"              : state.get("slides"),
+        "final_output"        : state.get("final_output"),
+        "audio_b64"           : state.get("audio_b64"),
+        "audio_mime"          : state.get("audio_mime"),
+        "timestamp"           : time.time(),
+    }
+
+    session_file = os.path.join(SESSIONS_DIR, f"{session_id}.json")
+    with open(session_file, "w", encoding="utf-8") as f:
+        json.dump(metadata, f, ensure_ascii=False, indent=2)
+
+    return session_file
+
+
+def list_saved_sessions() -> list[dict]:
+    """List all saved sessions from the local storage folder."""
+    if not os.path.exists(SESSIONS_DIR):
+        return []
+    
+    sessions = []
+    for f in os.listdir(SESSIONS_DIR):
+        if f.endswith(".json"):
+            try:
+                with open(os.path.join(SESSIONS_DIR, f), "r", encoding="utf-8") as file:
+                    data = json.load(file)
+                    sessions.append({
+                        "name": data.get("session_name", f),
+                        "id": data.get("session_id"),
+                        "filename": f,
+                        "timestamp": data.get("timestamp", 0)
+                    })
+            except Exception:
+                pass
+    sessions.sort(key=lambda x: x["timestamp"], reverse=True)
+    return sessions
+
+
+def load_session(filename: str) -> dict:
+    """Load session data from local storage."""
+    path = os.path.join(SESSIONS_DIR, filename)
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PAGE CONFIG
@@ -183,6 +262,8 @@ st.markdown("""
     cursor: pointer;
     text-decoration: none;
     transition: all 0.18s ease;
+    font-family: inherit;
+    outline: none;
   }
 
   .jump-btn:hover {
@@ -396,7 +477,7 @@ def _render_pdf_viewer_images():
             options=page_options,
             index=active_idx,
             label_visibility="collapsed",
-            key="slide_select_box"
+            key=f"slide_select_box_{st.session_state.active_slide}"
         )
         # Check if changed
         selected_page = int(selected_option.split()[1])
@@ -419,13 +500,74 @@ def _render_pdf_viewer_images():
     )
 
 
+def _inject_jump_script():
+    """
+    Inject a silent background iframe that dynamically finds all '.jump-btn' buttons
+    in the parent Streamlit document and hooks up their click handlers to broadcast
+    a postMessage containing the 'JUMP_TO' trigger. This circumvents Streamlit's
+    markdown sanitization which strips 'onclick' attributes.
+    """
+    js_code = """
+    <script>
+    (function() {
+        function bindButtons() {
+            try {
+                var doc = window.parent.document;
+                if (!doc) return;
+                var buttons = doc.querySelectorAll('.jump-btn');
+                buttons.forEach(function(btn) {
+                    if (btn.getAttribute('data-listener-added') === 'true') return;
+                    btn.setAttribute('data-listener-added', 'true');
+                    
+                    btn.style.cursor = 'pointer';
+                    
+                    btn.onclick = function(e) {
+                        e.preventDefault();
+                        var time = parseFloat(btn.getAttribute('data-time'));
+                        if (isNaN(time)) return;
+                        
+                        // Broadcast JUMP_TO to all iframes
+                        var frames = doc.querySelectorAll('iframe');
+                        frames.forEach(function(fr) {
+                            try {
+                                fr.contentWindow.postMessage({type: 'JUMP_TO', time: time}, '*');
+                            } catch(err) {}
+                        });
+                    };
+                });
+            } catch(e) {}
+            
+            // Also try local document just in case
+            try {
+                var buttons = document.querySelectorAll('.jump-btn');
+                buttons.forEach(function(btn) {
+                    if (btn.getAttribute('data-listener-added') === 'true') return;
+                    btn.setAttribute('data-listener-added', 'true');
+                    btn.style.cursor = 'pointer';
+                    btn.onclick = function(e) {
+                        e.preventDefault();
+                        var time = parseFloat(btn.getAttribute('data-time'));
+                        if (isNaN(time)) return;
+                        window.postMessage({type: 'JUMP_TO', time: time}, '*');
+                    };
+                });
+            } catch(e) {}
+        }
+        
+        // Poll regularly to catch newly rendered Streamlit components
+        var interval = setInterval(bindButtons, 200);
+        setTimeout(function() { clearInterval(interval); }, 20000);
+    })();
+    </script>
+    """
+    components.html(js_code, height=0, width=0)
+
+
 def _render_note_card(note: dict, idx: int):
     """
-    Render a single note card with a JS-powered timestamp-jump button.
-
-    The button uses an onclick that posts a message to any sibling iframes
-    containing the audio player, and also tries parent.jumpTo() for the
-    case where both components share a window context.
+    Render a single note card with a jump button containing data-time.
+    We don't use inline onclick because Streamlit strips it for security.
+    Instead, our injected background iframe dynamically binds click handlers.
     """
     slide_num = note.get("slide_number", "?")
     title     = note.get("slide_title",  "Untitled")
@@ -434,19 +576,6 @@ def _render_note_card(note: dict, idx: int):
     t_end     = note.get("timestamp_end",   0)
     ts_label  = f"⏱ {_seconds_to_hms(t_start)} → {_seconds_to_hms(t_end)}"
 
-    # JavaScript snippet: broadcast the jump command to all iframes on the page
-    # and also attempt parent-window access (works in some Streamlit setups).
-    js_jump = (
-        f"(function(){{"
-        f"  var t={t_start};"
-        f"  var frames=window.parent.document.querySelectorAll('iframe');"
-        f"  frames.forEach(function(fr){{"
-        f"    try{{ fr.contentWindow.jumpTo(t); }}catch(e){{}}"
-        f"  }});"
-        f"  try{{ window.parent.jumpTo(t); }}catch(e){{}}"
-        f"}})()"
-    )
-
     card_html = f"""
     <div class="note-card" id="note-card-{idx}">
       <span class="note-slide-badge">Slide {slide_num}</span>
@@ -454,11 +583,9 @@ def _render_note_card(note: dict, idx: int):
       <div class="note-body">{body}</div>
       <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px;">
         <span class="note-ts">{ts_label}</span>
-        <a href="javascript:void(0);"
-           class="jump-btn"
-           onclick="{js_jump}">
+        <button class="jump-btn" data-time="{t_start}">
           ▶&nbsp;Play at {_seconds_to_hms(t_start)}
-        </a>
+        </button>
       </div>
     </div>
     """
@@ -606,6 +733,71 @@ with st.sidebar:
             mime="application/json",
             use_container_width=True,
         )
+
+    # ── Persistent Storage panel ──────────────────────────────────────────────
+    st.divider()
+    st.markdown("**💾 Saved Sessions**")
+    
+    # 1. Load Session Dropdown
+    sessions = list_saved_sessions()
+    if sessions:
+        session_options = {"-- Select a saved session --": ""}
+        for s in sessions:
+            dt = time.strftime("%Y-%m-%d %H:%M", time.localtime(s["timestamp"]))
+            label = f"{s['name']} ({dt})"
+            session_options[label] = s["filename"]
+            
+        selected_session_label = st.selectbox(
+            "Load Past Lecture",
+            options=list(session_options.keys()),
+            index=0,
+            key="load_session_dropdown"
+        )
+        selected_session_file = session_options[selected_session_label]
+        
+        if selected_session_file:
+            if st.button("Load Selected Session", use_container_width=True):
+                with st.spinner("⏳ Loading session..."):
+                    try:
+                        data = load_session(selected_session_file)
+                        st.session_state.pdf_path = data.get("pdf_path")
+                        st.session_state.media_path = data.get("media_path")
+                        st.session_state.transcript_segments = data.get("transcript_segments")
+                        st.session_state.slides = data.get("slides")
+                        st.session_state.final_output = data.get("final_output")
+                        st.session_state.audio_b64 = data.get("audio_b64")
+                        st.session_state.audio_mime = data.get("audio_mime")
+                        st.session_state.slide_images = None  # regenerate on-the-fly
+                        st.session_state.active_slide = 1
+                        st.success("🎉 Lecture reloaded successfully!")
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to load session: {e}")
+    else:
+        st.caption("No saved lectures found.")
+
+    # 2. Save Session Action
+    if st.session_state.final_output:
+        st.divider()
+        st.markdown("**💾 Save Current Session**")
+        save_name = st.text_input(
+            "Session Name",
+            placeholder="e.g. Lecture 1 - Intro",
+            key="save_session_name"
+        )
+        if st.button("💾 Save Session", use_container_width=True):
+            if not save_name.strip():
+                st.warning("Please enter a name for the session.")
+            else:
+                with st.spinner("⏳ Saving session..."):
+                    try:
+                        save_session(save_name.strip(), st.session_state)
+                        st.success(f"✅ Saved as '{save_name}'!")
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to save session: {e}")
 
     st.divider()
 
@@ -755,37 +947,27 @@ if st.session_state.final_output:
         st.caption(f"📑 {info['page_count']} pages · {os.path.basename(st.session_state.pdf_path)}")
         _render_pdf_viewer_images()
 
-    # RIGHT — Notes cards
+    # RIGHT — Notes cards (Strict 1-to-1 sync with active slide)
     with col_notes:
+        active_slide = st.session_state.get("active_slide", 1)
         notes = st.session_state.final_output
+        
+        # Filter notes for the active slide
+        filtered = [n for n in notes if n.get("slide_number") == active_slide]
+        
         st.markdown(
-            f'<div class="col-label">🧠 AI-Generated Notes &nbsp;<span style="color:#484f58;font-weight:400;font-size:0.72rem;text-transform:none;">{len(notes)} insight(s)</span></div>',
+            f'<div class="col-label">🧠 Slide {active_slide} Notes &nbsp;<span style="color:#484f58;font-weight:400;font-size:0.72rem;text-transform:none;">{len(filtered)} insight(s)</span></div>',
             unsafe_allow_html=True,
         )
 
-        # Filter controls
-        filter_col1, filter_col2 = st.columns([2, 1])
-        with filter_col1:
-            search_q = st.text_input("🔍 Search notes", placeholder="Type to filter…",
-                                     label_visibility="collapsed")
-        with filter_col2:
-            slide_nums = sorted(set(n.get("slide_number", 0) for n in notes))
-            slide_filter = st.selectbox(
-                "Slide",
-                options=["All"] + [f"Slide {s}" for s in slide_nums],
-                label_visibility="collapsed",
-            )
-
-        # Apply filters
-        filtered = notes
+        search_q = st.text_input("🔍 Search within this slide's notes", placeholder="Type to filter…",
+                                 label_visibility="collapsed")
+        
         if search_q.strip():
             q = search_q.strip().lower()
             filtered = [n for n in filtered
                         if q in n.get("spoken_notes", "").lower()
                         or q in n.get("slide_title", "").lower()]
-        if slide_filter != "All":
-            target_num = int(slide_filter.split()[1])
-            filtered = [n for n in filtered if n.get("slide_number") == target_num]
 
         # Render note cards
         st.markdown('<div class="notes-panel">', unsafe_allow_html=True)
@@ -793,11 +975,23 @@ if st.session_state.final_output:
             for i, note in enumerate(filtered):
                 _render_note_card(note, i)
         else:
+            # Elegant placeholder for slides without specific verbal notes
             st.markdown(
-                '<div style="text-align:center;color:#484f58;padding:3rem 0;">No notes match your filter.</div>',
+                f"""
+                <div style="background:rgba(255,255,255,0.01); border:1px dashed rgba(100,160,255,0.15);
+                            border-radius:14px; padding:3rem 1.5rem; text-align:center; color:#8b949e;">
+                  <div style="font-size:2rem; margin-bottom:0.5rem;">🧠</div>
+                  <strong style="color:#58a6ff;">No Specific Verbal Insights</strong><br>
+                  <span style="font-size:0.85rem; color:#484f58; display:block; margin-top:6px; line-height:1.5;">
+                    The professor did not explain verbal-only slides or hidden insights for Slide {active_slide} in this chunk.
+                    Play the lecture audio to listen to the general discussion.
+                  </span>
+                </div>
+                """,
                 unsafe_allow_html=True,
             )
         st.markdown('</div>', unsafe_allow_html=True)
+        _inject_jump_script()
 
     # ── Raw JSON preview ──────────────────────────────────────────────────────
     with st.expander("🗂️ View Raw Output JSON"):
