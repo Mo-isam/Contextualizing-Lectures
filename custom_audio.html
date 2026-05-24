@@ -1,0 +1,378 @@
+<!--
+custom_audio.html
+-----------------
+A self-contained HTML/JS audio player designed to be injected into
+Streamlit via st.components.v1.html().
+
+Key capabilities:
+  1. Plays MP3 / WAV / MP4-audio in the browser via the HTML5 <audio> element.
+  2. Exposes a global JS function  jumpTo(seconds)  that can be called from
+     any button on the page to seek to an arbitrary timestamp and auto-play.
+  3. Because Streamlit isolates components in iframes, the notes panel in
+     app.py passes timestamp data through the iframe srcdoc attribute;
+     each card's "▶ Play" button calls parent.jumpTo() if available,
+     or posts a message that the outer frame listens for.
+
+Usage (from app.py):
+    audio_b64 = base64.b64encode(audio_bytes).read()).decode()
+    html = open("custom_audio.html").read()
+              .replace("{{AUDIO_B64}}", audio_b64)
+              .replace("{{AUDIO_MIME}}", mime_type)   # e.g. audio/wav
+    st.components.v1.html(html, height=140)
+
+TIMESTAMP JUMP API
+    window.jumpTo(seconds: number) → void
+        Seeks the audio to `seconds` and starts playback immediately.
+        Safe to call even before the audio is fully loaded (queued).
+
+INTER-FRAME MESSAGING
+    The notes panel posts: { type: "JUMP_TO", time: <seconds> }
+    This component listens for that message and calls jumpTo() accordingly.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lecture Audio Player</title>
+  <style>
+    /* ── Reset & base ─────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      background: transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 130px;
+      padding: 8px;
+    }
+
+    /* ── Player card ──────────────────────────────────────────────────────── */
+    .player-card {
+      width: 100%;
+      max-width: 720px;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      border: 1px solid rgba(100, 160, 255, 0.2);
+      border-radius: 16px;
+      padding: 16px 20px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4),
+                  0 0 0 1px rgba(255,255,255,0.05) inset;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* ── Top bar: icon + label + time ────────────────────────────────────── */
+    .top-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .mic-icon {
+      font-size: 1.4rem;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.7; transform: scale(1.08); }
+    }
+
+    .player-label {
+      flex: 1;
+      color: #a8c4f0;
+      font-size: 0.85rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .time-display {
+      color: #64b0ff;
+      font-size: 0.9rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      background: rgba(100, 176, 255, 0.1);
+      padding: 3px 10px;
+      border-radius: 20px;
+      border: 1px solid rgba(100, 176, 255, 0.2);
+    }
+
+    /* ── Progress bar ─────────────────────────────────────────────────────── */
+    .progress-wrapper {
+      position: relative;
+      height: 6px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 3px;
+      cursor: pointer;
+      overflow: hidden;
+    }
+
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #4a90e2, #7b5ea7, #64b0ff);
+      border-radius: 3px;
+      transition: width 0.25s linear;
+      pointer-events: none;
+    }
+
+    .progress-wrapper:hover .progress-bar {
+      filter: brightness(1.2);
+    }
+
+    /* ── Controls ─────────────────────────────────────────────────────────── */
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .ctrl-btn {
+      background: rgba(100, 160, 255, 0.12);
+      border: 1px solid rgba(100, 160, 255, 0.25);
+      border-radius: 50%;
+      width: 36px;
+      height: 36px;
+      color: #a8c4f0;
+      font-size: 0.9rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.18s ease;
+      flex-shrink: 0;
+    }
+
+    .ctrl-btn:hover {
+      background: rgba(100, 160, 255, 0.28);
+      color: #fff;
+      transform: scale(1.08);
+    }
+
+    .play-btn {
+      width: 44px;
+      height: 44px;
+      font-size: 1.1rem;
+      background: linear-gradient(135deg, #4a90e2, #7b5ea7);
+      border-color: transparent;
+      color: #fff;
+      box-shadow: 0 4px 15px rgba(74, 144, 226, 0.4);
+    }
+
+    .play-btn:hover {
+      box-shadow: 0 6px 20px rgba(74, 144, 226, 0.6);
+      transform: scale(1.1);
+    }
+
+    /* Volume row */
+    .volume-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+    }
+
+    .volume-icon {
+      color: #a8c4f0;
+      font-size: 0.85rem;
+    }
+
+    input[type="range"].volume-slider {
+      -webkit-appearance: none;
+      width: 80px;
+      height: 4px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    input[type="range"].volume-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      background: #64b0ff;
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow: 0 0 6px rgba(100, 176, 255, 0.6);
+    }
+
+    /* Jump-indicator badge */
+    .jump-badge {
+      font-size: 0.72rem;
+      color: #90e0a0;
+      background: rgba(80, 200, 120, 0.12);
+      border: 1px solid rgba(80, 200, 120, 0.3);
+      border-radius: 20px;
+      padding: 2px 10px;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      white-space: nowrap;
+    }
+
+    .jump-badge.visible { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<div class="player-card">
+
+  <!-- Hidden native audio element — controlled entirely by JS -->
+  <audio id="lec-audio" preload="auto">
+    <source id="audio-source" src="data:{{AUDIO_MIME}};base64,{{AUDIO_B64}}" type="{{AUDIO_MIME}}" />
+    Your browser does not support the audio element.
+  </audio>
+
+  <!-- Top bar -->
+  <div class="top-bar">
+    <span class="mic-icon">🎙️</span>
+    <span class="player-label">Lecture Audio</span>
+    <span class="time-display" id="time-display">00:00 / 00:00</span>
+  </div>
+
+  <!-- Progress bar (clickable for seeking) -->
+  <div class="progress-wrapper" id="progress-wrapper" title="Click to seek">
+    <div class="progress-bar" id="progress-bar"></div>
+  </div>
+
+  <!-- Playback controls -->
+  <div class="controls">
+    <button class="ctrl-btn" id="btn-rewind"  title="Back 10s">⏮</button>
+    <button class="ctrl-btn play-btn" id="btn-play" title="Play / Pause">▶</button>
+    <button class="ctrl-btn" id="btn-forward" title="Forward 10s">⏭</button>
+
+    <div class="volume-row">
+      <span class="volume-icon">🔊</span>
+      <input type="range" class="volume-slider" id="volume-slider"
+             min="0" max="1" step="0.02" value="1" />
+    </div>
+
+    <!-- Shown briefly when a note card triggers a jump -->
+    <span class="jump-badge" id="jump-badge">⚡ Jumped to timestamp</span>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+// Lecture Audio Player — JavaScript Controller
+// ════════════════════════════════════════════════════════════════════════════
+
+(function () {
+  "use strict";
+
+  // ── Element refs ──────────────────────────────────────────────────────────
+  const audio      = document.getElementById("lec-audio");
+  const playBtn    = document.getElementById("btn-play");
+  const rewindBtn  = document.getElementById("btn-rewind");
+  const fwdBtn     = document.getElementById("btn-forward");
+  const progressWr = document.getElementById("progress-wrapper");
+  const progressBr = document.getElementById("progress-bar");
+  const timeDisp   = document.getElementById("time-display");
+  const volSlider  = document.getElementById("volume-slider");
+  const jumpBadge  = document.getElementById("jump-badge");
+
+  // ── Utility: format seconds → MM:SS ───────────────────────────────────────
+  function fmt(s) {
+    if (!isFinite(s) || s < 0) s = 0;
+    const m = Math.floor(s / 60);
+    const r = Math.floor(s % 60);
+    return String(m).padStart(2, "0") + ":" + String(r).padStart(2, "0");
+  }
+
+  // ── Update UI every animation frame while playing ─────────────────────────
+  function updateUI() {
+    const cur  = audio.currentTime  || 0;
+    const dur  = audio.duration     || 0;
+    const pct  = dur > 0 ? (cur / dur) * 100 : 0;
+    progressBr.style.width = pct + "%";
+    timeDisp.textContent   = fmt(cur) + " / " + fmt(dur);
+  }
+
+  audio.addEventListener("timeupdate",  updateUI);
+  audio.addEventListener("loadedmetadata", updateUI);
+
+  // ── Play / Pause toggle ───────────────────────────────────────────────────
+  function togglePlay() {
+    if (audio.paused) {
+      audio.play().catch(console.warn);
+      playBtn.textContent = "⏸";
+    } else {
+      audio.pause();
+      playBtn.textContent = "▶";
+    }
+  }
+
+  playBtn.addEventListener("click", togglePlay);
+
+  audio.addEventListener("ended", () => {
+    playBtn.textContent = "▶";
+  });
+
+  // ── Skip buttons (±10 s) ─────────────────────────────────────────────────
+  rewindBtn.addEventListener("click",  () => { audio.currentTime = Math.max(0, audio.currentTime - 10); });
+  fwdBtn.addEventListener("click",     () => { audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + 10); });
+
+  // ── Click-to-seek on progress bar ────────────────────────────────────────
+  progressWr.addEventListener("click", function (e) {
+    const rect = progressWr.getBoundingClientRect();
+    const frac = (e.clientX - rect.left) / rect.width;
+    if (isFinite(audio.duration) && audio.duration > 0) {
+      audio.currentTime = frac * audio.duration;
+    }
+  });
+
+  // ── Volume slider ─────────────────────────────────────────────────────────
+  volSlider.addEventListener("input", () => {
+    audio.volume = parseFloat(volSlider.value);
+  });
+
+  // ── jumpTo(seconds) — PUBLIC API ──────────────────────────────────────────
+  // This is the key function called by note-card buttons.
+  // It is exposed on the window object so it can be reached from:
+  //   1. Buttons rendered inside THIS same iframe.
+  //   2. Parent frame scripts via  frame.contentWindow.jumpTo(t).
+  let jumpBadgeTimer = null;
+
+  window.jumpTo = function (seconds) {
+    const t = parseFloat(seconds);
+    if (!isFinite(t) || t < 0) return;
+
+    // If audio metadata isn't loaded yet, queue the seek for when it is.
+    if (!isFinite(audio.duration)) {
+      audio.addEventListener("loadedmetadata", function onMeta() {
+        audio.currentTime = t;
+        audio.play().catch(console.warn);
+        playBtn.textContent = "⏸";
+        audio.removeEventListener("loadedmetadata", onMeta);
+      });
+    } else {
+      audio.currentTime = t;
+      audio.play().catch(console.warn);
+      playBtn.textContent = "⏸";
+    }
+
+    // Flash the jump badge
+    jumpBadge.textContent = "⚡ Jumped to " + fmt(t);
+    jumpBadge.classList.add("visible");
+    clearTimeout(jumpBadgeTimer);
+    jumpBadgeTimer = setTimeout(() => jumpBadge.classList.remove("visible"), 2500);
+  };
+
+  // ── Inter-frame message listener ──────────────────────────────────────────
+  // Streamlit renders each st.components.v1.html() call in its own iframe.
+  // Note cards in the Streamlit Python layer cannot call jumpTo() directly,
+  // so they post a postMessage to the window. We listen here.
+  window.addEventListener("message", function (event) {
+    // Basic validation — ignore unrelated messages.
+    if (!event.data || event.data.type !== "JUMP_TO") return;
+    window.jumpTo(event.data.time);
+  });
+
+})();
+</script>
+</body>
+</html>
