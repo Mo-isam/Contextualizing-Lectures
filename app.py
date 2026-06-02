@@ -33,6 +33,7 @@ from core.ai_aligner      import align_transcript_to_slides, discover_available_
 # ── Local Storage Modules ──────────────────────────────────────────────────────
 from core.storage import save_session, load_session, list_saved_sessions, FILES_DIR, SESSIONS_DIR
 from ui.assets import load_css, inject_jump_script
+from ui.components import render_audio_player, render_pdf_viewer_images, render_note_card, step_badge
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PAGE CONFIG
@@ -139,145 +140,6 @@ def render_upload_ui() -> tuple:
             st.success(f"✅ Media saved: `{media_file.name}`")
 
     return pdf_path, media_path
-
-
-def _seconds_to_hms(s: float) -> str:
-    """Convert raw seconds to H:MM:SS or M:SS string."""
-    s   = max(0, int(s))
-    h   = s // 3600
-    m   = (s % 3600) // 60
-    sec = s % 60
-    if h:
-        return f"{h}:{m:02d}:{sec:02d}"
-    return f"{m:02d}:{sec:02d}"
-
-
-def _render_audio_player():
-    """Render Streamlit's highly optimized native audio streaming player."""
-    if st.session_state.get("audio_path") and os.path.exists(st.session_state.audio_path):
-        st.audio(st.session_state.audio_path)
-
-
-def _render_pdf_viewer_images():
-    """
-    Renders high-quality PNG slide images with clean controls.
-    Includes Previous, Next, and Page-jump dropdown inputs.
-    """
-    # Ensure slide images are rendered if they aren't in session state
-    if not st.session_state.get("slide_images"):
-        if st.session_state.pdf_path:
-            temp_dir = get_or_create_temp_dir()
-            img_dir = os.path.join(temp_dir, "slide_images")
-            try:
-                with st.spinner("🎨 Rendering slide images for display..."):
-                    st.session_state.slide_images = render_pdf_to_images(st.session_state.pdf_path, img_dir)
-                    st.session_state.active_slide = 1
-            except Exception as e:
-                st.error(f"⚠️ Could not render PDF to images: {e}")
-                return
-
-    images = st.session_state.get("slide_images", [])
-    if not images:
-        st.info("No slide images available.")
-        return
-
-    num_pages = len(images)
-    if "active_slide" not in st.session_state or st.session_state.active_slide is None:
-        st.session_state.active_slide = 1
-        
-    # Ensure bounds
-    st.session_state.active_slide = max(1, min(st.session_state.active_slide, num_pages))
-    active_idx = st.session_state.active_slide - 1
-
-    # Render navigation bar above image
-    col_prev, col_num, col_next = st.columns([1, 2, 1])
-    
-    with col_prev:
-        if st.button("◀ Previous Page", width="stretch", key="prev_slide_btn"):
-            if st.session_state.active_slide > 1:
-                st.session_state.active_slide -= 1
-                st.rerun()
-                
-    with col_num:
-        # Beautiful centered select box for jumping pages
-        page_options = [f"Slide {i} / {num_pages}" for i in range(1, num_pages + 1)]
-        selected_option = st.selectbox(
-            "Go to page",
-            options=page_options,
-            index=active_idx,
-            label_visibility="collapsed",
-            key=f"slide_select_box_{st.session_state.active_slide}"
-        )
-        # Check if changed
-        selected_page = int(selected_option.split()[1])
-        if selected_page != st.session_state.active_slide:
-            st.session_state.active_slide = selected_page
-            st.rerun()
-
-    with col_next:
-        if st.button("Next Page ▶", width="stretch", key="next_slide_btn"):
-            if st.session_state.active_slide < num_pages:
-                st.session_state.active_slide += 1
-                st.rerun()
-
-    # Render the active slide image
-    active_img_path = images[active_idx]
-    st.image(
-        active_img_path,
-        use_container_width=True,
-        caption=f"Showing slide {st.session_state.active_slide} of {num_pages}"
-    )
-
-
-def _render_note_card(note: dict, idx: int):
-    """
-    Render a single note card. Gracefully handles both legacy JSON ('spoken_notes') 
-    and the new transcript-driven architecture ('exact_transcript' + 'ai_insight').
-    """
-    slide_num = note.get("slide_number", "?")
-    title     = note.get("slide_title",  "Untitled")
-    t_start   = note.get("timestamp_start", 0)
-    t_end     = note.get("timestamp_end",   0)
-    ts_label  = f"⏱ {_seconds_to_hms(t_start)} → {_seconds_to_hms(t_end)}"
-
-    # Data Extractors
-    exact_transcript = note.get("exact_transcript", "")
-    legacy_notes     = note.get("spoken_notes", "")
-    ai_insight       = note.get("ai_insight", "")
-
-    # HTML Body Assembly
-    if legacy_notes and not exact_transcript:
-        # Backward compatibility for old JSON saves
-        body_html = f'<div class="note-body">{legacy_notes}</div>'
-    else:
-        # New Architecture layout
-        body_html = f'<div class="note-body" style="font-style: italic; border-left: 2px solid #64b0ff; padding-left: 10px; margin-bottom: 12px; color: #c9d1d9;">"{exact_transcript}"</div>'
-        if ai_insight:
-            body_html += f'<div style="font-size: 0.8rem; color: #a8c4f0; background: rgba(100,176,255,0.08); padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; border: 1px solid rgba(100,176,255,0.15);">💡 <b>AI Insight:</b> {ai_insight}</div>'
-
-    card_html = f"""
-    <div class="note-card" id="note-card-{idx}">
-      <span class="note-slide-badge">Slide {slide_num}</span>
-      <div class="note-title">{title}</div>
-      {body_html}
-      <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px;">
-        <span class="note-ts">{ts_label}</span>
-        <button class="jump-btn" data-time="{t_start}">
-          ▶&nbsp;Play at {_seconds_to_hms(t_start)}
-        </button>
-      </div>
-    </div>
-    """
-    st.markdown(card_html, unsafe_allow_html=True)
-
-
-def _step_badge(label: str, status: str) -> str:
-    css = {"done": "step-done", "running": "step-running", "pending": "step-pending"}
-    icon = {"done": "✅", "running": "⏳", "pending": "○"}
-    c = css.get(status, "step-pending")
-    i = icon.get(status, "○")
-    return f'<span class="step-badge {c}">{i} {label}</span>'
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SIDEBAR
@@ -410,10 +272,10 @@ with st.sidebar:
     s4 = "done"    if st.session_state.final_output                              else "pending"
 
     st.markdown(
-        _step_badge("Files Uploaded",   s1) + "<br>" +
-        _step_badge("Audio Transcribed", s2) + "<br>" +
-        _step_badge("PDF Parsed",        s3) + "<br>" +
-        _step_badge("AI Aligned",        s4),
+        step_badge("Files Uploaded",   s1) + "<br>" +
+        step_badge("Audio Transcribed", s2) + "<br>" +
+        step_badge("PDF Parsed",        s3) + "<br>" +
+        step_badge("AI Aligned",        s4),
         unsafe_allow_html=True,
     )
 
@@ -692,7 +554,7 @@ if st.session_state.final_output:
     # ── Custom audio player (full width above the split) ─────────────────────
     st.markdown('<div class="section-label">🎵 Audio Player — click any note card to jump</div>',
                 unsafe_allow_html=True)
-    _render_audio_player()
+    render_audio_player()
 
     st.divider()
 
@@ -704,7 +566,7 @@ if st.session_state.final_output:
         st.markdown('<div class="col-label">📄 Lecture Slides</div>', unsafe_allow_html=True)
         info = get_pdf_info(st.session_state.pdf_path)
         st.caption(f"📑 {info['page_count']} pages · {os.path.basename(st.session_state.pdf_path)}")
-        _render_pdf_viewer_images()
+        render_pdf_viewer_images(get_or_create_temp_dir())
 
     # RIGHT — Notes cards (Strict 1-to-1 sync with active slide)
     with col_notes:
@@ -716,7 +578,7 @@ if st.session_state.final_output:
         if general_notes:
             with st.expander(f"🗣️ General / Off-Slide Discussion ({len(general_notes)})", expanded=False):
                 for i, note in enumerate(general_notes):
-                    _render_note_card(note, f"gen_{i}")
+                    render_note_card(note, f"gen_{i}")
         # ----------------------------------------------------------------
 
         # Filter notes for the active slide
@@ -740,7 +602,7 @@ if st.session_state.final_output:
         st.markdown('<div class="notes-panel">', unsafe_allow_html=True)
         if filtered:
             for i, note in enumerate(filtered):
-                _render_note_card(note, i)
+                render_note_card(note, i)
         else:
             # Elegant placeholder for slides without specific verbal notes
             st.markdown(
