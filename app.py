@@ -52,22 +52,36 @@ def save_session(session_name: str, state: dict) -> str:
         pdf_ext = os.path.splitext(pdf_path)[1]
         saved_pdf_path = os.path.join(FILES_DIR, f"{session_id}{pdf_ext}")
         shutil.copy2(pdf_path, saved_pdf_path)
+        # Store only relative filename
+        saved_pdf_path = f"files/{session_id}{pdf_ext}"
 
     if media_path and os.path.exists(media_path):
         media_ext = os.path.splitext(media_path)[1]
         saved_media_path = os.path.join(FILES_DIR, f"{session_id}{media_ext}")
         shutil.copy2(media_path, saved_media_path)
+        # Store only relative filename
+        saved_media_path = f"files/{session_id}{media_ext}"
+
+        # --- NEW: Save the lightweight extracted .wav if it's a video ---
+        if media_ext.lower() == ".mp4" and "temp_dir" in st.session_state:
+            base_name = os.path.splitext(os.path.basename(media_path))[0]
+            temp_audio_path = os.path.join(st.session_state["temp_dir"], "audio", f"{base_name}_audio.wav")
+            if os.path.exists(temp_audio_path):
+                saved_audio_path = os.path.join(FILES_DIR, f"{session_id}_audio.wav")
+                shutil.copy2(temp_audio_path, saved_audio_path)
+                saved_audio_path = f"files/{session_id}_audio.wav"
+        elif media_ext.lower() in [".mp3", ".wav"]:
+            saved_audio_path = saved_media_path
 
     metadata = {
         "session_name"        : session_name,
         "session_id"          : session_id,
         "pdf_path"            : saved_pdf_path,
         "media_path"          : saved_media_path,
+        "audio_path"          : locals().get('saved_audio_path', None),
         "transcript_segments" : state.get("transcript_segments"),
         "slides"              : state.get("slides"),
         "final_output"        : state.get("final_output"),
-        "audio_b64"           : state.get("audio_b64"),
-        "audio_mime"          : state.get("audio_mime"),
         "timestamp"           : time.time(),
     }
 
@@ -102,10 +116,18 @@ def list_saved_sessions() -> list[dict]:
 
 
 def load_session(filename: str) -> dict:
-    """Load session data from local storage."""
+    """Load session data and dynamically resolve relative paths to absolute runtime paths."""
     path = os.path.join(SESSIONS_DIR, filename)
     with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        data = json.load(f)
+        
+    for key in ["pdf_path", "media_path", "audio_path"]:
+        val = data.get(key)
+        if val and val.startswith("files/"):
+            file_name = os.path.basename(val)
+            data[key] = os.path.join(FILES_DIR, file_name)
+            
+    return data
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PAGE CONFIG
@@ -352,12 +374,13 @@ def _init_state():
         "slides"              : None,
         "final_output"        : None,
         "pipeline_running"    : False,
-        "audio_b64"           : None,
-        "audio_mime"          : None,
+        "audio_path"          : None,
         "discovered_models"   : [],
         "last_api_key"        : None,
         "slide_images"        : None,
         "active_slide"        : 1,
+        "tx_engine"           : "Local Whisper (CPU) - Private",
+        "pdf_engine"          : "Native (PyMuPDF) - Fast",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -381,51 +404,10 @@ def _seconds_to_hms(s: float) -> str:
     return f"{m:02d}:{sec:02d}"
 
 
-def _load_audio_b64(media_path: str) -> tuple[str, str]:
-    """
-    Read the audio/video file and return (base64_string, mime_type).
-    For MP4 we extract the raw bytes and declare audio/mp4.
-    """
-    ext  = os.path.splitext(media_path)[1].lower()
-    mime_map = {".mp3": "audio/mpeg", ".wav": "audio/wav",
-                ".mp4": "audio/mp4"}
-    mime = mime_map.get(ext, "audio/wav")
-
-    # For video files, try to find the extracted WAV first.
-    if ext == ".mp4":
-        temp_dir  = get_or_create_temp_dir()
-        wav_candidates = [
-            f for f in os.listdir(os.path.join(temp_dir, "audio"))
-            if f.endswith("_audio.wav")
-        ] if os.path.isdir(os.path.join(temp_dir, "audio")) else []
-
-        if wav_candidates:
-            media_path = os.path.join(temp_dir, "audio", wav_candidates[0])
-            mime       = "audio/wav"
-
-    with open(media_path, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode("utf-8")
-    return b64, mime
-
-
 def _render_audio_player():
-    """Inject the custom HTML audio player into the Streamlit page."""
-    if st.session_state.audio_b64 is None:
-        return
-
-    html_template_path = os.path.join(os.path.dirname(__file__), "custom_audio.html")
-
-    try:
-        with open(html_template_path, "r", encoding="utf-8") as f:
-            html = f.read()
-    except FileNotFoundError:
-        st.error("❌ custom_audio.html not found. Make sure it is in the same directory as app.py.")
-        return
-
-    html = html.replace("{{AUDIO_B64}}", st.session_state.audio_b64)
-    html = html.replace("{{AUDIO_MIME}}", st.session_state.audio_mime)
-
-    components.html(html, height=145, scrolling=False)
+    """Render Streamlit's highly optimized native audio streaming player."""
+    if st.session_state.get("audio_path") and os.path.exists(st.session_state.audio_path):
+        st.audio(st.session_state.audio_path)
 
 
 def _render_pdf_viewer_images():
@@ -464,7 +446,7 @@ def _render_pdf_viewer_images():
     col_prev, col_num, col_next = st.columns([1, 2, 1])
     
     with col_prev:
-        if st.button("◀ Previous Page", use_container_width=True, key="prev_slide_btn"):
+        if st.button("◀ Previous Page", width="stretch", key="prev_slide_btn"):
             if st.session_state.active_slide > 1:
                 st.session_state.active_slide -= 1
                 st.rerun()
@@ -486,7 +468,7 @@ def _render_pdf_viewer_images():
             st.rerun()
 
     with col_next:
-        if st.button("Next Page ▶", use_container_width=True, key="next_slide_btn"):
+        if st.button("Next Page ▶", width="stretch", key="next_slide_btn"):
             if st.session_state.active_slide < num_pages:
                 st.session_state.active_slide += 1
                 st.rerun()
@@ -502,85 +484,85 @@ def _render_pdf_viewer_images():
 
 def _inject_jump_script():
     """
-    Inject a silent background iframe that dynamically finds all '.jump-btn' buttons
-    in the parent Streamlit document and hooks up their click handlers to broadcast
-    a postMessage containing the 'JUMP_TO' trigger. This circumvents Streamlit's
-    markdown sanitization which strips 'onclick' attributes.
+    Injects a highly efficient event-delegation script into the parent document.
+    It survives Streamlit UI refreshes and satisfies browser autoplay security 
+    because it fires directly from the user's click gesture.
     """
     js_code = """
     <script>
     (function() {
-        function bindButtons() {
-            try {
-                var doc = window.parent.document;
-                if (!doc) return;
-                var buttons = doc.querySelectorAll('.jump-btn');
-                buttons.forEach(function(btn) {
-                    if (btn.getAttribute('data-listener-added') === 'true') return;
-                    btn.setAttribute('data-listener-added', 'true');
-                    
-                    btn.style.cursor = 'pointer';
-                    
-                    btn.onclick = function(e) {
-                        e.preventDefault();
-                        var time = parseFloat(btn.getAttribute('data-time'));
-                        if (isNaN(time)) return;
-                        
-                        // Broadcast JUMP_TO to all iframes
-                        var frames = doc.querySelectorAll('iframe');
-                        frames.forEach(function(fr) {
-                            try {
-                                fr.contentWindow.postMessage({type: 'JUMP_TO', time: time}, '*');
-                            } catch(err) {}
-                        });
-                    };
-                });
-            } catch(e) {}
+        try {
+            // Get the main Streamlit document safely
+            var parentDoc = window.parent.document || document;
             
-            // Also try local document just in case
-            try {
-                var buttons = document.querySelectorAll('.jump-btn');
-                buttons.forEach(function(btn) {
-                    if (btn.getAttribute('data-listener-added') === 'true') return;
-                    btn.setAttribute('data-listener-added', 'true');
-                    btn.style.cursor = 'pointer';
-                    btn.onclick = function(e) {
-                        e.preventDefault();
-                        var time = parseFloat(btn.getAttribute('data-time'));
-                        if (isNaN(time)) return;
-                        window.postMessage({type: 'JUMP_TO', time: time}, '*');
-                    };
-                });
-            } catch(e) {}
+            // Safety Check: Only attach this master listener ONCE per session.
+            if (parentDoc.__jumpScriptAdded) return;
+            parentDoc.__jumpScriptAdded = true;
+
+            // Master Click Listener attached to the entire page
+            parentDoc.body.addEventListener('click', function(e) {
+                // Check if what the user clicked (or its parent) is a jump button
+                var btn = e.target.closest('.jump-btn');
+                if (!btn) return; // If it's not a jump button, ignore the click
+
+                e.preventDefault();
+                e.stopPropagation();
+
+                var time = parseFloat(btn.getAttribute('data-time'));
+                var audioEl = parentDoc.querySelector('audio'); // Find Streamlit's native audio
+
+                if (audioEl && !isNaN(time)) {
+                    audioEl.currentTime = time;
+                    
+                    // Call play directly inside the click event to bypass security blocks
+                    var playPromise = audioEl.play();
+                    if (playPromise !== undefined) {
+                        playPromise.catch(function(error) {
+                            console.warn("Autoplay warning (usually ignorable):", error);
+                        });
+                    }
+                }
+            });
+        } catch(e) {
+            console.error("Failed to initialize jump script:", e);
         }
-        
-        // Poll regularly to catch newly rendered Streamlit components
-        var interval = setInterval(bindButtons, 200);
-        setTimeout(function() { clearInterval(interval); }, 20000);
     })();
     </script>
     """
+    import streamlit.components.v1 as components
     components.html(js_code, height=0, width=0)
-
 
 def _render_note_card(note: dict, idx: int):
     """
-    Render a single note card with a jump button containing data-time.
-    We don't use inline onclick because Streamlit strips it for security.
-    Instead, our injected background iframe dynamically binds click handlers.
+    Render a single note card. Gracefully handles both legacy JSON ('spoken_notes') 
+    and the new transcript-driven architecture ('exact_transcript' + 'ai_insight').
     """
     slide_num = note.get("slide_number", "?")
     title     = note.get("slide_title",  "Untitled")
-    body      = note.get("spoken_notes", "")
     t_start   = note.get("timestamp_start", 0)
     t_end     = note.get("timestamp_end",   0)
     ts_label  = f"⏱ {_seconds_to_hms(t_start)} → {_seconds_to_hms(t_end)}"
+
+    # Data Extractors
+    exact_transcript = note.get("exact_transcript", "")
+    legacy_notes     = note.get("spoken_notes", "")
+    ai_insight       = note.get("ai_insight", "")
+
+    # HTML Body Assembly
+    if legacy_notes and not exact_transcript:
+        # Backward compatibility for old JSON saves
+        body_html = f'<div class="note-body">{legacy_notes}</div>'
+    else:
+        # New Architecture layout
+        body_html = f'<div class="note-body" style="font-style: italic; border-left: 2px solid #64b0ff; padding-left: 10px; margin-bottom: 12px; color: #c9d1d9;">"{exact_transcript}"</div>'
+        if ai_insight:
+            body_html += f'<div style="font-size: 0.8rem; color: #a8c4f0; background: rgba(100,176,255,0.08); padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; border: 1px solid rgba(100,176,255,0.15);">💡 <b>AI Insight:</b> {ai_insight}</div>'
 
     card_html = f"""
     <div class="note-card" id="note-card-{idx}">
       <span class="note-slide-badge">Slide {slide_num}</span>
       <div class="note-title">{title}</div>
-      <div class="note-body">{body}</div>
+      {body_html}
       <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px;">
         <span class="note-ts">{ts_label}</span>
         <button class="jump-btn" data-time="{t_start}">
@@ -653,30 +635,33 @@ with st.sidebar:
         discovered_models = st.session_state.discovered_models
 
     if discovered_models:
-        # Build nice options dynamically
+        # Build nice options dynamically based on the 2026 model lineup
         MODEL_OPTIONS = {"Auto (try all, best quota)": ""}
         for m in discovered_models:
             label = m
-            if "1.5-flash" in m:
-                label += " ✦ Best free tier"
-            elif "2.0-flash-lite" in m:
-                label += " ✦ Lightweight"
-            elif "1.5-pro" in m:
-                label += " ✦ High Reasoning"
-            elif "2.0-flash" in m:
-                label += " ✦ Next-gen Flash"
-            elif "8b" in m:
-                label += " ✦ Smallest"
+            if "3.5-flash" in m:
+                label += " ✦ Latest Generative AI"
+            elif "3.1-flash-lite" in m or "2.5-flash-lite" in m:
+                label += " ✦ Fast & Lightweight"
+            elif "3-flash-preview" in m:
+                label += " ✦ Preview Build"
+            elif "2.5-flash" in m:
+                label += " ✦ Stable Production"
+            elif "gemma" in m:
+                label += " ✦ Open Weights"
             
             MODEL_OPTIONS[label] = m
     else:
+        # Fallback dictionary if API discovery fails
         MODEL_OPTIONS = {
-            "Auto (try all, best quota)"   : "",
-            "gemini-1.5-flash ✦ Production"            : "gemini-1.5-flash",
-            "gemini-1.5-flash-latest ✦ Best free tier" : "gemini-1.5-flash-latest",
-            "gemini-2.0-flash-lite ✦ Lightweight"      : "gemini-2.0-flash-lite",
-            "gemini-2.0-flash"                          : "gemini-2.0-flash",
-            "gemini-1.5-flash-8b ✦ Smallest"           : "gemini-1.5-flash-8b",
+            "Auto (try all, best quota)"                : "",
+            "Gemini 3.5 Flash ✦ Latest"                 : "gemini-3.5-flash",
+            "Gemini 3.1 Flash Lite ✦ Fast"              : "gemini-3.1-flash-lite",
+            "Gemini 3.0 Flash Preview"                  : "gemini-3-flash-preview",
+            "Gemini 2.5 Flash ✦ Stable"                 : "gemini-2.5-flash",
+            "Gemini 2.5 Flash Lite"                     : "gemini-2.5-flash-lite",
+            "Gemma 4 (31B) ✦ Open Weights"              : "gemma-4-31b-it",
+            "Gemma 4 (26B A4B) ✦ Optimized"             : "gemma-4-26b-a4b-it",
         }
 
     model_label = st.selectbox(
@@ -695,13 +680,28 @@ with st.sidebar:
     <div style="background:rgba(74,144,226,0.06);border:1px solid rgba(74,144,226,0.15);
                 border-radius:8px;padding:10px 12px;font-size:0.75rem;color:#8b949e;
                 margin-top:6px;">
-      <strong style="color:#58a6ff;">Free-tier limits</strong><br>
-      • <b>1.5-flash-latest</b>: 15 req/min · 1M tok/day<br>
-      • <b>2.0-flash-lite</b>: 30 req/min · 1.5M tok/day<br>
-      • <b>2.0-flash</b>: 15 req/min · 1.5M tok/day<br>
+      <strong style="color:#58a6ff;">Free-tier limits (2026)</strong><br>
+      • <b>Gemini 3.x Flash</b>: 15 req/min · 1.5M tok/day<br>
+      • <b>Gemini 3.1 Flash Lite</b>: 30 req/min · 2M tok/day<br>
+      • <b>Gemini 2.5 Flash</b>: 15 req/min · 1.5M tok/day<br>
       <span style="color:#484f58;">Quota resets midnight PT daily.</span>
     </div>
     """, unsafe_allow_html=True)
+
+    # ── Pipeline Settings ─────────────────────────────────────────────────────
+    st.markdown("**⚙️ Pipeline Settings**")
+    st.session_state.pdf_engine = st.selectbox(
+        "Slide Extraction",
+        options=["Native (PyMuPDF) - Fast", "AI Vision (Gemini) - High Accuracy"],
+        index=0,
+        help="Use AI Vision if your PDF contains images of text instead of raw text."
+    )
+    st.session_state.tx_engine = st.selectbox(
+        "Audio Transcription",
+        options=["Local Whisper (CPU) - Private", "AI Audio (Gemini) - Fast/Cloud"],
+        index=0,
+        help="AI Audio is significantly faster on standard PCs but uses API quota."
+    )
 
     st.divider()
 
@@ -731,9 +731,8 @@ with st.sidebar:
             data=json_str,
             file_name="lecture_notes.json",
             mime="application/json",
-            use_container_width=True,
+            width="stretch",
         )
-
     # ── Persistent Storage panel ──────────────────────────────────────────────
     st.divider()
     st.markdown("**💾 Saved Sessions**")
@@ -756,7 +755,7 @@ with st.sidebar:
         selected_session_file = session_options[selected_session_label]
         
         if selected_session_file:
-            if st.button("Load Selected Session", use_container_width=True):
+            if st.button("Load Selected Session", width="stretch"):
                 with st.spinner("⏳ Loading session..."):
                     try:
                         data = load_session(selected_session_file)
@@ -765,8 +764,32 @@ with st.sidebar:
                         st.session_state.transcript_segments = data.get("transcript_segments")
                         st.session_state.slides = data.get("slides")
                         st.session_state.final_output = data.get("final_output")
-                        st.session_state.audio_b64 = data.get("audio_b64")
-                        st.session_state.audio_mime = data.get("audio_mime")
+                        
+                        st.session_state.media_path = data.get("media_path")
+                        st.session_state.audio_path = data.get("audio_path")
+
+                        # --- UPGRADE LEGACY SESSIONS PERMANENTLY ---
+                        if not st.session_state.audio_path or not os.path.exists(st.session_state.audio_path):
+                            if st.session_state.media_path and st.session_state.media_path.endswith(".mp4"):
+                                with st.spinner("⏳ Upgrading Legacy Session: Extracting audio permanently..."):
+                                    from audio_processor import extract_audio_from_video
+                                    
+                                    base_name = os.path.splitext(os.path.basename(st.session_state.media_path))[0]
+                                    perm_audio_path = os.path.join(FILES_DIR, f"{base_name}_audio.wav")
+                                    
+                                    if not os.path.exists(perm_audio_path):
+                                        extract_audio_from_video(st.session_state.media_path, FILES_DIR)
+                                    
+                                    st.session_state.audio_path = perm_audio_path
+                                    
+                                    # Update the JSON so it never has to do this again
+                                    data["audio_path"] = f"files/{os.path.basename(perm_audio_path)}"
+                                    full_json_path = os.path.join(SESSIONS_DIR, selected_session_file)
+                                    with open(full_json_path, "w", encoding="utf-8") as f:
+                                        json.dump(data, f, ensure_ascii=False, indent=2)
+                            else:
+                                st.session_state.audio_path = st.session_state.media_path
+
                         st.session_state.slide_images = None  # regenerate on-the-fly
                         st.session_state.active_slide = 1
                         st.success("🎉 Lecture reloaded successfully!")
@@ -786,7 +809,7 @@ with st.sidebar:
             placeholder="e.g. Lecture 1 - Intro",
             key="save_session_name"
         )
-        if st.button("💾 Save Session", use_container_width=True):
+        if st.button("💾 Save Session", width="stretch"):
             if not save_name.strip():
                 st.warning("Please enter a name for the session.")
             else:
@@ -802,7 +825,7 @@ with st.sidebar:
     st.divider()
 
     # ── Reset ─────────────────────────────────────────────────────────────────
-    if st.button("🔄 Reset Session", use_container_width=True):
+    if st.button("🔄 Reset Session", width="stretch"):
         cleanup_temp_dir()
         for k in list(st.session_state.keys()):
             del st.session_state[k]
@@ -845,7 +868,7 @@ if files_ready and st.session_state.final_output is None:
     col_run, col_info = st.columns([1, 3])
 
     with col_run:
-        run_clicked = st.button("🚀 Run Full Pipeline", use_container_width=True,
+        run_clicked = st.button("🚀 Run Full Pipeline", width="stretch",
                                 disabled=not api_key)
     with col_info:
         if not api_key:
@@ -855,13 +878,31 @@ if files_ready and st.session_state.final_output is None:
         st.session_state.pipeline_running = True
         temp_dir = get_or_create_temp_dir()
 
+        # Build dynamic model priority list for all AI tasks
+        from ai_aligner import GEMINI_MODEL_PRIORITY
+        models_to_try = [selected_model] if selected_model else []
+        for m in discovered_models:
+            if m not in models_to_try: models_to_try.append(m)
+        for m in GEMINI_MODEL_PRIORITY:
+            if m not in models_to_try: models_to_try.append(m)
+
         # ── Stage 2a: Transcription ────────────────────────────────────────
         with st.status("🎙️ Processing audio…", expanded=True) as status_box:
             try:
-                st.write("Loading Whisper model and transcribing…")
-                segments = process_media_file(st.session_state.media_path, temp_dir)
+                audio_prog = st.progress(0.0)
+                def audio_cb(frac, msg): 
+                    audio_prog.progress(min(frac, 1.0))
+                    status_box.update(label=msg)
+                    
+                engine = "ai" if "AI Audio" in st.session_state.tx_engine else "local"
+                
+                segments = process_media_file(
+                    st.session_state.media_path, temp_dir,
+                    engine=engine, api_key=api_key, models_to_try=models_to_try, progress_cb=audio_cb
+                )
+                audio_prog.empty() # clean up bar when done
                 st.session_state.transcript_segments = segments
-                st.write(f"✅ {len(segments)} segments transcribed.")
+                status_box.update(label=f"✅ {len(segments)} segments transcribed.", state="complete")
             except Exception as e:
                 status_box.update(label="❌ Audio processing failed", state="error")
                 st.error(f"Audio error: {e}")
@@ -870,29 +911,48 @@ if files_ready and st.session_state.final_output is None:
         # ── Stage 2b: PDF Parsing ──────────────────────────────────────────
         with st.status("📄 Parsing PDF slides…", expanded=True) as status_box:
             try:
-                slides = extract_slide_text(st.session_state.pdf_path)
-                st.session_state.slides = slides
-                st.write(f"✅ {len(slides)} slides extracted.")
-                
-                # Render slides to PNG images
-                st.write("🎨 Rendering slide pages to crisp images...")
+                # Always render images first (needed for both Native display and AI Vision OCR)
+                status_box.update(label="🎨 Rendering slide pages to crisp images...")
                 img_dir = os.path.join(temp_dir, "slide_images")
-                from pdf_processor import render_pdf_to_images
+                from pdf_processor import render_pdf_to_images, extract_slide_text_ai
                 st.session_state.slide_images = render_pdf_to_images(st.session_state.pdf_path, img_dir)
                 st.session_state.active_slide = 1
-                st.write(f"✅ {len(st.session_state.slide_images)} slides rendered as images.")
+
+                if "Native" in st.session_state.pdf_engine:
+                    status_box.update(label="📄 Extracting text natively...")
+                    slides = extract_slide_text(st.session_state.pdf_path)
+                    
+                    # ── Check for Image-Only PDFs ──
+                    empty_count = sum(1 for s in slides if "(No text found" in s["text"])
+                    if empty_count > 0:
+                        st.warning(f"⚠️ {empty_count} out of {len(slides)} slides had no readable text (likely an image-based PDF). If alignment fails, switch 'Slide Extraction' to 'AI Vision' in the sidebar and rerun.")
+                else:
+                    if not api_key: raise ValueError("API Key required for AI Vision.")
+                    pdf_prog = st.progress(0.0)
+                    def slide_cb(frac, msg): 
+                        pdf_prog.progress(min(frac, 1.0))
+                        status_box.update(label=msg)
+                        
+                    slides = extract_slide_text_ai(st.session_state.slide_images, api_key, models_to_try, slide_cb)
+                    pdf_prog.empty()
+
+                st.session_state.slides = slides
+                status_box.update(label=f"✅ {len(slides)} slides processed.", state="complete")
             except Exception as e:
                 status_box.update(label="❌ PDF parsing failed", state="error")
                 st.error(f"PDF error: {e}")
                 st.stop()
 
-        # ── Stage 2c: Load audio for player ───────────────────────────────
+        # ── Stage 2c: Setup audio path for player ───────────────────────────────
         try:
-            b64, mime = _load_audio_b64(st.session_state.media_path)
-            st.session_state.audio_b64  = b64
-            st.session_state.audio_mime = mime
+            ext = os.path.splitext(st.session_state.media_path)[1].lower()
+            if ext in [".mp3", ".wav"]:
+                st.session_state.audio_path = st.session_state.media_path
+            else:
+                base_name = os.path.splitext(os.path.basename(st.session_state.media_path))[0]
+                st.session_state.audio_path = os.path.join(temp_dir, "audio", f"{base_name}_audio.wav")
         except Exception as e:
-            st.warning(f"⚠️ Could not pre-load audio for player: {e}")
+            st.warning(f"⚠️ Could not set up audio for player: {e}")
 
         # ── Stage 2d: AI Alignment ─────────────────────────────────────────
         progress_bar = st.progress(0, text="Starting AI alignment…")
@@ -952,11 +1012,19 @@ if st.session_state.final_output:
         active_slide = st.session_state.get("active_slide", 1)
         notes = st.session_state.final_output
         
+        # --- NEW: Catch and display Slide 0 (General/Off-topic) notes ---
+        general_notes = [n for n in notes if n.get("slide_number") == 0]
+        if general_notes:
+            with st.expander(f"🗣️ General / Off-Slide Discussion ({len(general_notes)})", expanded=False):
+                for i, note in enumerate(general_notes):
+                    _render_note_card(note, f"gen_{i}")
+        # ----------------------------------------------------------------
+
         # Filter notes for the active slide
         filtered = [n for n in notes if n.get("slide_number") == active_slide]
         
         st.markdown(
-            f'<div class="col-label">🧠 Slide {active_slide} Notes &nbsp;<span style="color:#484f58;font-weight:400;font-size:0.72rem;text-transform:none;">{len(filtered)} insight(s)</span></div>',
+            f'<div class="col-label" style="margin-top: 10px;">🧠 Slide {active_slide} Notes &nbsp;<span style="color:#484f58;font-weight:400;font-size:0.72rem;text-transform:none;">{len(filtered)} insight(s)</span></div>',
             unsafe_allow_html=True,
         )
 

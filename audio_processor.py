@@ -10,7 +10,14 @@ Handles two tasks:
 import os
 import json
 import subprocess
+import time
 import streamlit as st
+
+try:
+    import google.generativeai as genai
+    GENAI_AVAILABLE = True
+except ImportError:
+    GENAI_AVAILABLE = False
 
 # Lazy-import Whisper so the app loads even if torch isn't installed yet.
 try:
@@ -135,34 +142,143 @@ def transcribe_audio(audio_path: str) -> list[dict]:
     return segments
 
 
-# ── 3. Orchestration Helper ────────────────────────────────────────────────────
+# ── 3. AI Audio Transcription (Gemini) ─────────────────────────────────────────
 
-def process_media_file(media_path: str, temp_dir: str) -> list[dict]:
-    """
-    Top-level helper called by app.py.
-    Automatically decides whether to run FFmpeg first (video input)
-    or pass the file directly to Whisper (audio input).
+def transcribe_audio_ai(audio_path: str, temp_dir: str, api_key: str, models_to_try: list[str], progress_cb=None) -> list[dict]:
+    """Transcribe audio using Gemini, with hot-swapping for quotas and chunking for token limits."""
+    if not GENAI_AVAILABLE:
+        raise ImportError("google-generativeai is not installed.")
+        
+    genai.configure(api_key=api_key.strip())
+    
+    schema = {
+        "type": "OBJECT",
+        "properties": {
+            "segments": {
+                "type": "ARRAY",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "text": {"type": "STRING"},
+                        "start": {"type": "NUMBER"},
+                        "end": {"type": "NUMBER"}
+                    },
+                    "required": ["text", "start", "end"]
+                }
+            }
+        },
+        "required": ["segments"]
+    }
+    
+    config = genai.GenerationConfig(
+        temperature=0.0, # Zero creativity, exact transcription
+        response_mime_type="application/json",
+        response_schema=schema
+    )
 
-    Args:
-        media_path : Path to the uploaded media file.
-        temp_dir   : Session temp directory for intermediate files.
+    # 1. Chunk the audio into 5-minute pieces using FFmpeg
+    chunk_dir = os.path.join(temp_dir, "audio_chunks")
+    os.makedirs(chunk_dir, exist_ok=True)
+    chunk_pattern = os.path.join(chunk_dir, "chunk_%03d.wav")
+    
+    if progress_cb: progress_cb(0.0, "✂️ Splitting audio into 5-minute chunks for AI...")
+    
+    cmd = [
+        "ffmpeg", "-i", audio_path,
+        "-f", "segment", "-segment_time", "300", "-c", "copy",
+        chunk_pattern, "-y"
+    ]
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
+    chunks = sorted([os.path.join(chunk_dir, f) for f in os.listdir(chunk_dir) if f.endswith(".wav")])
+    total_chunks = len(chunks)
+    
+    all_segments = []
+    global_id = 0
+    
+    for i, c_path in enumerate(chunks):
+        time_offset = i * 300.0  # 5 minutes per chunk
+        if progress_cb: progress_cb(i/total_chunks, f"☁️ Uploading & Transcribing chunk {i+1}/{total_chunks}...")
+        
+        # Upload to Gemini
+        gemini_file = genai.upload_file(c_path)
+        
+        # Wait for API processing (audio needs a few seconds to be "ACTIVE")
+        while gemini_file.state.name == "PROCESSING":
+            time.sleep(2)
+            gemini_file = genai.get_file(gemini_file.name)
+            
+        chunk_success = False
+        for model_id in models_to_try:
+            if chunk_success: break
+            model = genai.GenerativeModel(model_id)
+            
+            for attempt in range(1, 4):
+                try:
+                    prompt = "Transcribe this audio exactly. Do not summarize."
+                    response = model.generate_content([gemini_file, prompt], generation_config=config)
+                    data = json.loads(response.text) # Triggers error if blocked
+                    
+                    for seg in data.get("segments", []):
+                        all_segments.append({
+                            "id": global_id,
+                            "start": round(seg["start"] + time_offset, 2),
+                            "end": round(seg["end"] + time_offset, 2),
+                            "text": seg["text"].strip()
+                        })
+                        global_id += 1
+                        
+                    chunk_success = True
+                    break
+                except Exception as e:
+                    exc_str = str(e)
+                    
+                    if "finish_reason" in exc_str or "valid Part" in exc_str or "safety" in exc_str.lower():
+                        st.warning(f"⚠️ Audio chunk {i+1} blocked by AI Safety filter. Inserting blank segment.")
+                        all_segments.append({
+                            "id": global_id, "start": time_offset, "end": time_offset + 300.0,
+                            "text": "[Audio transcription blocked by AI safety filter]"
+                        })
+                        global_id += 1
+                        chunk_success = True
+                        break
+                        
+                    if ("limit: 0" in exc_str) or ("404" in exc_str):
+                        st.warning(f"⚠️ Model {model_id} exhausted. Swapping models...")
+                        break
+                        
+                    wait = 15 + (attempt * 5)
+                    st.warning(f"⏳ {model_id} rate limited. Waiting {wait}s...")
+                    time.sleep(wait)
 
-    Returns:
-        List of Whisper segment dicts with start / end timestamps.
-    """
+        genai.delete_file(gemini_file.name) # Clean up cloud storage regardless of success
+        
+        if not chunk_success:
+            st.error(f"❌ All models failed on audio chunk {i+1}.")
+            
+        if chunk_success and i < total_chunks - 1:
+            time.sleep(15)
+
+    return all_segments
+
+
+# ── 4. Orchestration Helper ────────────────────────────────────────────────────
+
+def process_media_file(media_path: str, temp_dir: str, engine: str = "local", api_key: str = "", models_to_try: list = None, progress_cb=None) -> list[dict]:
     ext = os.path.splitext(media_path)[1].lower()
     audio_dir = os.path.join(temp_dir, "audio")
 
     if ext == ".mp4":
-        st.info("🎬 Extracting audio from video… this may take a moment.")
+        if progress_cb: progress_cb(0.0, "🎬 Extracting audio from video...")
         audio_path = extract_audio_from_video(media_path, audio_dir)
-        st.success("✅ Audio extracted successfully.")
     else:
-        # Already an audio file — use as-is.
         audio_path = media_path
 
-    st.info("🎙️ Transcribing audio with Whisper… please wait.")
-    segments = transcribe_audio(audio_path)
-    st.success(f"✅ Transcription complete — {len(segments)} segments found.")
+    if engine == "ai":
+        if not api_key: raise ValueError("API Key required for AI Transcription.")
+        segments = transcribe_audio_ai(audio_path, temp_dir, api_key, models_to_try, progress_cb)
+    else:
+        if progress_cb: progress_cb(0.5, "🎙️ Transcribing locally with Whisper...")
+        segments = transcribe_audio(audio_path)
 
     return segments

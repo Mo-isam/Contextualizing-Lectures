@@ -34,15 +34,17 @@ except ImportError:
 CHUNK_DURATION_SECONDS = 240      # 4-minute chunks  (tune: 180–300)
 INTER_CHUNK_SLEEP_SEC  = 20       # seconds to wait between Gemini API calls
 
-# Free-tier model priority list — tried top-to-bottom if the primary fails.
-# gemini-1.5-flash-latest has the most generous free-tier quota (15 RPM / 1M TPD).
-# gemini-2.0-flash-lite is a lighter fallback with its own quota bucket.
+# 2026 model priority list — tried top-to-bottom if the primary fails.
+# Models are ordered from most advanced/stable to lightweight and open-weight fallbacks.
+# Note: We omit the 'models/' prefix as the Python SDK handles it implicitly.
 GEMINI_MODEL_PRIORITY = [
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-latest",
-    "gemini-2.0-flash-lite",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash-8b",
+    "gemini-3.5-flash",
+    "gemini-3.1-flash-lite",
+    "gemini-3-flash-preview",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemma-4-31b-it",
+    "gemma-4-26b-a4b-it",
 ]
 
 MAX_RETRIES           = 4         # retry count on transient API errors
@@ -116,7 +118,7 @@ def _chunk_segments(segments: list[dict], chunk_duration: int) -> list[list[dict
 def _format_chunk_for_prompt(chunk: list[dict]) -> str:
     lines = []
     for seg in chunk:
-        lines.append(f"[{_fmt_seconds(seg['start'])} → {_fmt_seconds(seg['end'])}] {seg['text']}")
+        lines.append(f"[ID: {seg['id']}] {seg['text']}")
     return "\n".join(lines)
 
 
@@ -126,60 +128,75 @@ def _fmt_seconds(s: float) -> str:
     return f"{m:02d}:{sec:02d}"
 
 
-def _build_prompt(slides_text: str, chunk_transcript: str,
-                  chunk_start: float, chunk_end: float) -> str:
+def _build_prompt(slides_text: str, chunk_transcript: str) -> str:
     return f"""
 You are an expert academic assistant specializing in lecture analysis and precise semantic alignment.
 
 ## YOUR TASK
 You will receive:
 1. **Slide Text Array** — the text content of every slide in the lecture presentation.
-2. **Transcript Chunk** — a portion of the professor's spoken lecture with timestamps.
+2. **Transcript Chunk** — a portion of the spoken lecture, where each sentence has a unique [ID: X].
 
-Your job is to MAP each spoken idea to the most relevant slide number by performing a rigorous alignment between the spoken transcript and the presentation text, and extract "hidden insights" (concepts the professor explained verbally that are NOT written on the slides).
+Your job is to MAP the spoken Segment IDs to the most relevant slide number.
 
 ## ALIGNMENT RULES (CRITICAL)
-1. **Rigorous Text Matching**: Carefully compare the transcript text with each slide's content. Look for identical keywords, matching topics, vocabulary, formulas, or slide titles.
-2. **Precise Timestamps**: Assign a timestamp range to a slide number only if the spoken words in that range are directly explaining, referencing, or discussing the content of that specific slide.
-3. **General Fallback**: If a segment does not match any slide (e.g. general greetings, administrative announcements, casual stories), map it to slide_number 0 and slide_title "General".
-4. **Verbal Notes**: In `spoken_notes`, provide a meaningful summary (1-3 sentences) of the professor's verbal explanations for that slide — do not just quote verbatim. Focus on extra insights not written on the slide text itself.
+1. **Rigorous Text Matching**: Carefully compare the transcript text with each slide's content to find matches.
+2. **Segment Mapping**: Return a list of all Segment IDs that belong to a specific slide.
+3. **General Fallback**: If a segment does not match any slide (e.g., greetings, admin, off-topic), map it to slide_number 0.
+4. **AI Insight**: If the professor explains something vital that is NOT written on the slide, summarize it in `ai_insight` (1-2 sentences). Otherwise, leave it as an empty string.
 
 ## SLIDE TEXT ARRAY
 {slides_text}
 
-## TRANSCRIPT CHUNK (time window: {_fmt_seconds(chunk_start)} → {_fmt_seconds(chunk_end)})
+## TRANSCRIPT CHUNK
 {chunk_transcript}
-
-## OUTPUT FORMAT (STRICT)
-Return ONLY a valid JSON array. No markdown, no commentary, no code fences.
-Each element must follow this exact schema:
-{{
-  "slide_number"   : <integer>,
-  "slide_title"    : "<string — title of the matched slide>",
-  "spoken_notes"   : "<string — key insights / explanation from the professor for this slide>",
-  "timestamp_start": <float — start time in seconds>,
-  "timestamp_end"  : <float — end time in seconds>
-}}
-
-Rules:
-- Output ONLY the JSON array, starting with [ and ending with ].
-- If multiple slides are discussed, create one entry per slide.
 """.strip()
 
 
-def _parse_gemini_response(response_text: str) -> list[dict]:
-    """Safely parse the JSON array returned by Gemini, stripping any markdown fences."""
-    text = response_text.strip()
-    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"\s*```$", "", text)
-
-    try:
-        data = json.loads(text)
-        if not isinstance(data, list):
-            raise ValueError("Gemini did not return a JSON array.")
-        return data
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"JSON parse error from Gemini response: {exc}\n\nRaw:\n{text}")
+def _process_structured_response(response_text: str, segment_dict: dict, slide_dict: dict) -> list[dict]:
+    """Parse the Structured Output JSON and mathematically group IDs into continuous timestamp blocks."""
+    data = json.loads(response_text)
+    alignments = data.get("alignments", [])
+    
+    final_notes = []
+    for item in alignments:
+        s_num = item.get("slide_number", 0)
+        s_title = slide_dict.get(s_num, f"Slide {s_num}")
+        insight = item.get("ai_insight", "").strip()
+        ids = sorted(item.get("segment_ids", []))
+        
+        if not ids: continue
+        
+        # Group non-consecutive IDs into continuous sequential blocks
+        blocks = []
+        current = [ids[0]]
+        for i in range(1, len(ids)):
+            if ids[i] == current[-1] + 1:
+                current.append(ids[i])
+            else:
+                blocks.append(current)
+                current = [ids[i]]
+        blocks.append(current)
+        
+        # For each continuous block, calculate perfect timestamps and stitch the exact transcript
+        for block in blocks:
+            valid_segs = [segment_dict[vid] for vid in block if vid in segment_dict]
+            if not valid_segs: continue
+            
+            t_start = valid_segs[0]["start"]
+            t_end = valid_segs[-1]["end"]
+            transcript_text = " ".join([seg["text"] for seg in valid_segs])
+            
+            final_notes.append({
+                "slide_number": s_num,
+                "slide_title": s_title,
+                "exact_transcript": transcript_text,
+                "ai_insight": insight,
+                "timestamp_start": t_start,
+                "timestamp_end": t_end
+            })
+            
+    return final_notes
 
 
 def discover_available_models(api_key: str) -> list[str]:
@@ -257,9 +274,14 @@ def align_transcript_to_slides(
         if m not in models_to_try:
             models_to_try.append(m)
 
-    # ── Prepare slide context ─────────────────────────────────────────────────
+    # ── Prepare context and mapping dictionaries ──────────────────────────────
     from pdf_processor import format_slides_for_prompt
     slides_text = format_slides_for_prompt(slides)
+    
+    # O(1) lookup dictionaries for post-processing
+    segment_dict = {seg["id"]: seg for seg in segments}
+    slide_dict = {s["page_number"]: s["title"] for s in slides}
+    slide_dict[0] = "General / Off-topic"
 
     # ── Split transcript into chunks ──────────────────────────────────────────
     chunks = _chunk_segments(segments, CHUNK_DURATION_SECONDS)
@@ -279,8 +301,35 @@ def align_transcript_to_slides(
             progress_cb(idx / total, f"🤖 Processing {chunk_label}…")
 
         chunk_transcript = _format_chunk_for_prompt(chunk)
-        prompt           = _build_prompt(slides_text, chunk_transcript,
-                                          chunk_start, chunk_end)
+        prompt           = _build_prompt(slides_text, chunk_transcript)
+
+        # Strict JSON Schema Definition
+        structured_schema = {
+            "type": "OBJECT",
+            "properties": {
+                "alignments": {
+                    "type": "ARRAY",
+                    "items": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "slide_number": {"type": "INTEGER"},
+                            "segment_ids": {
+                                "type": "ARRAY",
+                                "items": {"type": "INTEGER"}
+                            },
+                            "ai_insight": {"type": "STRING"}
+                        },
+                        "required": ["slide_number", "segment_ids", "ai_insight"]
+                    }
+                }
+            },
+            "required": ["alignments"]
+        }
+        
+        gen_config = genai.GenerationConfig(
+            response_mime_type="application/json",
+            response_schema=structured_schema
+        )
 
         # ── Model + retry loop ────────────────────────────────────────────────
         # Strategy:
@@ -301,8 +350,8 @@ def align_transcript_to_slides(
 
             for attempt in range(1, MAX_RETRIES + 1):
                 try:
-                    response      = model.generate_content(prompt)
-                    chunk_results = _parse_gemini_response(response.text)
+                    response      = model.generate_content(prompt, generation_config=gen_config)
+                    chunk_results = _process_structured_response(response.text, segment_dict, slide_dict)
                     all_results.extend(chunk_results)
                     last_error    = None
                     chunk_success = True
@@ -342,10 +391,14 @@ def align_transcript_to_slides(
                         msg  = (f"⚠️ [{model_id}] attempt {attempt} failed: "
                                 f"{exc_str[:120]}. Retrying in {wait}s…")
 
-                    if progress_cb:
-                        progress_cb(idx / total, msg)
                     st.warning(msg)
-                    time.sleep(wait)
+                    if progress_cb:
+                        # Visual countdown instead of a silent UI freeze
+                        for sec in range(wait, 0, -1):
+                            progress_cb(idx / total, f"{msg} (Resuming in {sec}s...)")
+                            time.sleep(1)
+                    else:
+                        time.sleep(wait)
 
             # Log if this model ran out of retries without success
             if not chunk_success and last_error is not None:
@@ -367,11 +420,14 @@ def align_transcript_to_slides(
         # before the next call keeps us well within the RPM limit.
         if idx < total - 1:
             if progress_cb:
-                progress_cb(
-                    (idx + 1) / total,
-                    f"⏳ Waiting {INTER_CHUNK_SLEEP_SEC}s before next chunk…"
-                )
-            time.sleep(INTER_CHUNK_SLEEP_SEC)
+                for sec in range(INTER_CHUNK_SLEEP_SEC, 0, -1):
+                    progress_cb(
+                        (idx + 1) / total,
+                        f"⏳ Waiting {sec}s before next chunk to respect API limits…"
+                    )
+                    time.sleep(1)
+            else:
+                time.sleep(INTER_CHUNK_SLEEP_SEC)
 
     # ── Merge & sort by timestamp ──────────────────────────────────────────────
     all_results.sort(key=lambda x: x.get("timestamp_start", 0))

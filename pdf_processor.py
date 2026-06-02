@@ -6,8 +6,20 @@ structured mapping of page numbers to their text content.
 """
 
 import os
+import json
+import time
 import fitz          # PyMuPDF
 import streamlit as st
+from PIL import Image
+
+try:
+    import google.generativeai as genai
+    GENAI_AVAILABLE = True
+except ImportError:
+    GENAI_AVAILABLE = False
+
+# Silence non-fatal structure warnings (e.g., "No common ancestor in structure tree")
+fitz.TOOLS.mupdf_display_errors(False)
 
 
 def extract_slide_text(pdf_path: str) -> list[dict]:
@@ -127,3 +139,103 @@ def get_pdf_info(pdf_path: str) -> dict:
         return info
     except Exception:
         return {"page_count": 0, "title": "Unknown", "author": "Unknown"}
+
+
+def extract_slide_text_ai(image_paths: list[str], api_key: str, models_to_try: list[str], progress_cb=None) -> list[dict]:
+    """
+    Extract text from slide PNGs using Gemini Vision. 
+    Includes multi-model quota hot-swapping and copyright/safety filter bypass.
+    """
+    if not GENAI_AVAILABLE:
+        raise ImportError("google-generativeai is not installed.")
+    
+    genai.configure(api_key=api_key.strip())
+    
+    schema = {
+        "type": "OBJECT",
+        "properties": {
+            "extracted_slides": {
+                "type": "ARRAY",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "page_number": {"type": "INTEGER"},
+                        "title": {"type": "STRING"},
+                        "text": {"type": "STRING"}
+                    },
+                    "required": ["page_number", "title", "text"]
+                }
+            }
+        },
+        "required": ["extracted_slides"]
+    }
+    
+    config = genai.GenerationConfig(
+        temperature=0.0,  # Absolute zero creativity required for OCR
+        response_mime_type="application/json",
+        response_schema=schema
+    )
+    
+    BATCH_SIZE = 5
+    all_slides = []
+    total_images = len(image_paths)
+    
+    for i in range(0, total_images, BATCH_SIZE):
+        batch_paths = image_paths[i:i + BATCH_SIZE]
+        if progress_cb:
+            progress_cb(i / total_images, f"👁️ AI reading slides {i+1} to {min(i+BATCH_SIZE, total_images)}...")
+            
+        # Load images for Gemini
+        images = [Image.open(p) for p in batch_paths]
+        prompt = ["You are a highly accurate OCR system. Extract the exact text from these slides. Do not hallucinate or summarize."] + images
+        
+        start_page = i + 1
+        end_page   = min(i + BATCH_SIZE, total_images)
+        chunk_success = False
+        
+        for model_id in models_to_try:
+            if chunk_success: break
+            model = genai.GenerativeModel(model_id)
+            
+            for attempt in range(1, 4):  # Max 3 retries
+                try:
+                    response = model.generate_content(prompt, generation_config=config)
+                    data = json.loads(response.text) # Will trigger error if blocked by copyright
+                    all_slides.extend(data.get("extracted_slides", []))
+                    chunk_success = True
+                    break
+                except Exception as e:
+                    exc_str = str(e)
+                    
+                    # 1. Blocked by Copyright / Safety
+                    if "finish_reason" in exc_str or "valid Part" in exc_str or "safety" in exc_str.lower():
+                        st.warning(f"⚠️ AI Copyright/Safety filter blocked reading slides {start_page}-{end_page}. Injecting placeholders.")
+                        for p in range(start_page, end_page + 1):
+                            all_slides.append({
+                                "page_number": p, 
+                                "title": f"Slide {p}", 
+                                "text": "(Text extraction blocked by AI safety/copyright filter)"
+                            })
+                        chunk_success = True
+                        break
+                        
+                    # 2. Hard Quota Exhausted or Model Not Found -> Swap to next model immediately
+                    if ("limit: 0" in exc_str) or ("404" in exc_str):
+                        st.warning(f"⚠️ Model {model_id} exhausted/unavailable. Swapping models...")
+                        break
+                        
+                    # 3. Rate Limit (429) -> Sleep and retry
+                    wait = 15 + (attempt * 5)
+                    st.warning(f"⏳ {model_id} rate limited. Waiting {wait}s...")
+                    time.sleep(wait)
+        
+        if not chunk_success:
+            st.error(f"❌ All models failed on slides {start_page}-{end_page}. Skipping.")
+            
+        # Free API tier rate limit protection between batches
+        if chunk_success and (i + BATCH_SIZE < total_images):
+            time.sleep(15)
+            
+    # Ensure correct page numbering and sorting
+    all_slides.sort(key=lambda x: x.get("page_number", 0))
+    return all_slides

@@ -1,0 +1,10 @@
+.env
+repomix-output.xml
+*.pyc
+*.pptx
+workspace.code-workspace
+__pycache__
+.git
+data
+.vscode
+data_storage
