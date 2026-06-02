@@ -11,7 +11,9 @@ import os
 import json
 import subprocess
 import time
-import streamlit as st
+import logging
+
+logger = logging.getLogger(__name__)
 
 try:
     import google.generativeai as genai
@@ -234,7 +236,10 @@ def transcribe_audio_ai(audio_path: str, temp_dir: str, api_key: str, models_to_
                     exc_str = str(e)
                     
                     if "finish_reason" in exc_str or "valid Part" in exc_str or "safety" in exc_str.lower():
-                        st.warning(f"⚠️ Audio chunk {i+1} blocked by AI Safety filter. Inserting blank segment.")
+                        msg = f"⚠️ Audio chunk {i+1} blocked by AI Safety filter. Inserting blank segment."
+                        logger.warning(msg)
+                        if progress_cb: progress_cb(i/total_chunks, msg)
+                        
                         all_segments.append({
                             "id": global_id, "start": time_offset, "end": time_offset + 300.0,
                             "text": "[Audio transcription blocked by AI safety filter]"
@@ -244,17 +249,23 @@ def transcribe_audio_ai(audio_path: str, temp_dir: str, api_key: str, models_to_
                         break
                         
                     if ("limit: 0" in exc_str) or ("404" in exc_str):
-                        st.warning(f"⚠️ Model {model_id} exhausted. Swapping models...")
+                        msg = f"⚠️ Model {model_id} exhausted. Swapping models..."
+                        logger.warning(msg)
+                        if progress_cb: progress_cb(i/total_chunks, msg)
                         break
                         
                     wait = 15 + (attempt * 5)
-                    st.warning(f"⏳ {model_id} rate limited. Waiting {wait}s...")
+                    msg = f"⏳ {model_id} rate limited. Waiting {wait}s..."
+                    logger.warning(msg)
+                    if progress_cb: progress_cb(i/total_chunks, msg)
                     time.sleep(wait)
 
         genai.delete_file(gemini_file.name) # Clean up cloud storage regardless of success
         
         if not chunk_success:
-            st.error(f"❌ All models failed on audio chunk {i+1}.")
+            msg = f"❌ All models failed on audio chunk {i+1}."
+            logger.error(msg)
+            if progress_cb: progress_cb(i/total_chunks, msg)
             
         if chunk_success and i < total_chunks - 1:
             time.sleep(15)
