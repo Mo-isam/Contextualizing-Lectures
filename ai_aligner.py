@@ -21,7 +21,9 @@ import os
 import json
 import time
 import re
-import streamlit as st
+import logging
+
+logger = logging.getLogger(__name__)
 
 try:
     import google.generativeai as genai
@@ -365,18 +367,18 @@ def align_transcript_to_slides(
                     if "404" in exc_str:
                         msg = (f"⚠️ Model [{model_id}] not found or not supported. "
                                f"Switching to next model…")
+                        logger.warning(msg)
                         if progress_cb:
                             progress_cb(idx / total, msg)
-                        st.warning(msg)
                         break   # break retry loop, outer loop picks next model
 
                     # ── Hard daily quota exhausted → try next model ────────
                     if _is_quota_exhausted(exc_str):
                         msg = (f"⚠️ Daily quota exhausted for [{model_id}]. "
                                f"Switching to next model…")
+                        logger.warning(msg)
                         if progress_cb:
                             progress_cb(idx / total, msg)
-                        st.warning(msg)
                         break   # break retry loop, outer loop picks next model
 
                     # ── Transient 429 → parse delay and wait ──────────────
@@ -391,7 +393,7 @@ def align_transcript_to_slides(
                         msg  = (f"⚠️ [{model_id}] attempt {attempt} failed: "
                                 f"{exc_str[:120]}. Retrying in {wait}s…")
 
-                    st.warning(msg)
+                    logger.warning(msg)
                     if progress_cb:
                         # Visual countdown instead of a silent UI freeze
                         for sec in range(wait, 0, -1):
@@ -402,17 +404,19 @@ def align_transcript_to_slides(
 
             # Log if this model ran out of retries without success
             if not chunk_success and last_error is not None:
-                st.warning(
-                    f"⚠️ [{model_id}] gave up on {chunk_label} "
-                    f"after {MAX_RETRIES} attempts: {str(last_error)[:200]}"
-                )
+                msg = (f"⚠️ [{model_id}] gave up on {chunk_label} "
+                       f"after {MAX_RETRIES} attempts: {str(last_error)[:200]}")
+                logger.warning(msg)
+                if progress_cb:
+                    progress_cb(idx / total, msg)
 
         if not chunk_success:
-            st.error(
-                f"❌ All models failed for {chunk_label}. "
-                f"This chunk will be skipped. Check your API quota at "
-                f"https://ai.dev/rate-limit"
-            )
+            msg = (f"❌ All models failed for {chunk_label}. "
+                   f"This chunk will be skipped. Check your API quota at "
+                   f"https://ai.dev/rate-limit")
+            logger.error(msg)
+            if progress_cb:
+                progress_cb(idx / total, msg)
 
         # ── Rate-limit throttle between chunks ────────────────────────────────
         # This inter-chunk sleep is the primary defense against per-minute
