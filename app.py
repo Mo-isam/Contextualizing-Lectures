@@ -24,7 +24,8 @@ import streamlit.components.v1 as components
 import shutil
 
 # ── Local modules ──────────────────────────────────────────────────────────────
-from file_manager    import render_upload_ui, get_or_create_temp_dir, cleanup_temp_dir
+import tempfile
+from file_utils      import save_file, convert_pptx_to_pdf, SUPPORTED_MEDIA_EXT
 from audio_processor import process_media_file
 from pdf_processor   import extract_slide_text, get_pdf_info
 from ai_aligner      import align_transcript_to_slides
@@ -392,6 +393,69 @@ _init_state()
 # ═══════════════════════════════════════════════════════════════════════════════
 # HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
+
+def get_or_create_temp_dir() -> str:
+    """Return (and cache) a persistent temp directory for the session."""
+    if "temp_dir" not in st.session_state:
+        st.session_state["temp_dir"] = tempfile.mkdtemp(prefix="ctx_lectures_")
+    return st.session_state["temp_dir"]
+
+def cleanup_temp_dir():
+    """Remove the entire temp directory on session reset."""
+    temp_dir = st.session_state.get("temp_dir")
+    if temp_dir and os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        del st.session_state["temp_dir"]
+
+def render_upload_ui() -> tuple:
+    """Render Streamlit file-upload widgets and process inputs."""
+    st.markdown("### 📂 Upload Your Files")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("**📄 Lecture Slides (PDF or PPTX)**")
+        pdf_file = st.file_uploader("Upload Slides", type=["pdf", "pptx", "ppt"], key="pdf_uploader", label_visibility="collapsed")
+
+    with col2:
+        st.markdown("**🎥 Lecture Video / Audio**")
+        media_file = st.file_uploader("Upload Media", type=["mp4", "mp3", "wav"], key="media_uploader", label_visibility="collapsed")
+
+    pdf_path = None
+    media_path = None
+    temp_dir = get_or_create_temp_dir()
+
+    if pdf_file is not None:
+        ext = os.path.splitext(pdf_file.name)[1].lower()
+        if ext not in [".pdf", ".pptx", ".ppt"]:
+            st.error("❌ Please upload a valid PDF or PowerPoint file.")
+        else:
+            target_dir = os.path.join(temp_dir, "presentation" if ext in [".pptx", ".ppt"] else "pdf")
+            saved_path = save_file(pdf_file.getbuffer(), pdf_file.name, target_dir)
+            
+            if ext in [".pptx", ".ppt"]:
+                pdf_name = os.path.splitext(pdf_file.name)[0] + ".pdf"
+                pdf_path = os.path.join(temp_dir, "pdf", pdf_name)
+                with st.spinner("⏳ Converting PowerPoint to PDF..."):
+                    try:
+                        convert_pptx_to_pdf(saved_path, pdf_path)
+                        st.success(f"✅ Converted PowerPoint to PDF: `{pdf_name}`")
+                    except Exception as e:
+                        st.error(f"❌ PowerPoint conversion failed: {e}")
+                        pdf_path = None
+            else:
+                pdf_path = saved_path
+                st.success(f"✅ PDF saved: `{pdf_file.name}`")
+
+    if media_file is not None:
+        ext = os.path.splitext(media_file.name)[1].lower()
+        if ext not in SUPPORTED_MEDIA_EXT:
+            st.error("❌ Unsupported media format. Use MP4, MP3, or WAV.")
+        else:
+            media_path = save_file(media_file.getbuffer(), media_file.name, os.path.join(temp_dir, "media"))
+            st.success(f"✅ Media saved: `{media_file.name}`")
+
+    return pdf_path, media_path
+
 
 def _seconds_to_hms(s: float) -> str:
     """Convert raw seconds to H:MM:SS or M:SS string."""
