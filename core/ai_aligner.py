@@ -23,6 +23,8 @@ import time
 import re
 import logging
 
+from core.llm_service import generate_content_with_fallback, SafetyFilterError, AllModelsFailedError
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -36,9 +38,6 @@ except ImportError:
 CHUNK_DURATION_SECONDS = 240      # 4-minute chunks  (tune: 180–300)
 INTER_CHUNK_SLEEP_SEC  = 20       # seconds to wait between Gemini API calls
 
-# 2026 model priority list — tried top-to-bottom if the primary fails.
-# Models are ordered from most advanced/stable to lightweight and open-weight fallbacks.
-# Note: We omit the 'models/' prefix as the Python SDK handles it implicitly.
 GEMINI_MODEL_PRIORITY = [
     "gemini-3.5-flash",
     "gemini-3.1-flash-lite",
@@ -49,51 +48,8 @@ GEMINI_MODEL_PRIORITY = [
     "gemma-4-26b-a4b-it",
 ]
 
-MAX_RETRIES           = 4         # retry count on transient API errors
-RETRY_BUFFER_SEC      = 5         # extra seconds added on top of API-specified retry delay
-MAX_WAIT_SEC          = 120       # cap on any single sleep to avoid blocking forever
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
-
-def _extract_retry_delay(exc_str: str) -> int:
-    """
-    Parse the retry delay (in seconds) from a 429 error message.
-
-    Gemini 429 responses contain text like:
-        'retry_delay { seconds: 28 }'
-    or the simpler:
-        'Please retry in 28.7s'
-
-    We try both patterns and return the delay + RETRY_BUFFER_SEC.
-    Falls back to a default of 60 s if nothing is found.
-    """
-    # Pattern 1: proto format  "retry_delay { seconds: N }"
-    m = re.search(r"retry_delay\s*\{\s*seconds:\s*(\d+)", exc_str)
-    if m:
-        return int(m.group(1)) + RETRY_BUFFER_SEC
-
-    # Pattern 2: human-readable  "Please retry in 28.7s"
-    m = re.search(r"retry in\s+([\d.]+)\s*s", exc_str, re.IGNORECASE)
-    if m:
-        return int(float(m.group(1))) + RETRY_BUFFER_SEC
-
-    # Pattern 3: just a bare number of seconds in the message
-    m = re.search(r"(\d{2,3})\s*second", exc_str, re.IGNORECASE)
-    if m:
-        return int(m.group(1)) + RETRY_BUFFER_SEC
-
-    return 60   # safe fallback
-
-
-def _is_quota_exhausted(exc_str: str) -> bool:
-    """
-    Returns True if the error is a hard quota exhaustion (daily limit hit)
-    rather than a transient per-minute rate limit.
-    Daily exhaustion is indicated by 'limit: 0' in the 429 body.
-    """
-    return "limit: 0" in exc_str and "GenerateRequestsPerDay" in exc_str
-
 
 def _chunk_segments(segments: list[dict], chunk_duration: int) -> list[list[dict]]:
     """
@@ -333,90 +289,33 @@ def align_transcript_to_slides(
             response_schema=structured_schema
         )
 
-        # ── Model + retry loop ────────────────────────────────────────────────
-        # Strategy:
-        #   1. Try current model up to MAX_RETRIES times.
-        #   2. On 429, parse the API-specified retry delay and sleep exactly
-        #      that long (capped at MAX_WAIT_SEC) before retrying.
-        #   3. If the daily quota is fully exhausted (limit: 0), skip to the
-        #      next model in the priority list immediately — no point retrying.
-        #   4. If all models fail, log a warning and continue to the next chunk.
-        chunk_success = False
-
-        for model_id in models_to_try:
-            if chunk_success:
-                break
-
-            model = genai.GenerativeModel(model_id)
-            last_error = None
-
-            for attempt in range(1, MAX_RETRIES + 1):
-                try:
-                    response      = model.generate_content(prompt, generation_config=gen_config)
-                    chunk_results = _process_structured_response(response.text, segment_dict, slide_dict)
-                    all_results.extend(chunk_results)
-                    last_error    = None
-                    chunk_success = True
-                    break   # ✅ success — stop retrying this model
-
-                except Exception as exc:
-                    exc_str    = str(exc)
-                    last_error = exc
-
-                    # ── Model not found/supported (404) → try next model ──
-                    if "404" in exc_str:
-                        msg = (f"⚠️ Model [{model_id}] not found or not supported. "
-                               f"Switching to next model…")
-                        logger.warning(msg)
-                        if progress_cb:
-                            progress_cb(idx / total, msg)
-                        break   # break retry loop, outer loop picks next model
-
-                    # ── Hard daily quota exhausted → try next model ────────
-                    if _is_quota_exhausted(exc_str):
-                        msg = (f"⚠️ Daily quota exhausted for [{model_id}]. "
-                               f"Switching to next model…")
-                        logger.warning(msg)
-                        if progress_cb:
-                            progress_cb(idx / total, msg)
-                        break   # break retry loop, outer loop picks next model
-
-                    # ── Transient 429 → parse delay and wait ──────────────
-                    if "429" in exc_str:
-                        wait = min(_extract_retry_delay(exc_str), MAX_WAIT_SEC)
-                        msg  = (f"⏳ [{model_id}] rate limited "
-                                f"(attempt {attempt}/{MAX_RETRIES}). "
-                                f"Sleeping {wait}s as requested by API…")
-                    else:
-                        # Other error (5xx, parse error) — fixed backoff
-                        wait = min(30 * attempt, MAX_WAIT_SEC)
-                        msg  = (f"⚠️ [{model_id}] attempt {attempt} failed: "
-                                f"{exc_str[:120]}. Retrying in {wait}s…")
-
-                    logger.warning(msg)
-                    if progress_cb:
-                        # Visual countdown instead of a silent UI freeze
-                        for sec in range(wait, 0, -1):
-                            progress_cb(idx / total, f"{msg} (Resuming in {sec}s...)")
-                            time.sleep(1)
-                    else:
-                        time.sleep(wait)
-
-            # Log if this model ran out of retries without success
-            if not chunk_success and last_error is not None:
-                msg = (f"⚠️ [{model_id}] gave up on {chunk_label} "
-                       f"after {MAX_RETRIES} attempts: {str(last_error)[:200]}")
-                logger.warning(msg)
-                if progress_cb:
-                    progress_cb(idx / total, msg)
-
-        if not chunk_success:
-            msg = (f"❌ All models failed for {chunk_label}. "
-                   f"This chunk will be skipped. Check your API quota at "
-                   f"https://ai.dev/rate-limit")
+        # ── Generate Content via Centralized LLM Service ──────────────────────
+        try:
+            response_text = generate_content_with_fallback(
+                contents=prompt,
+                generation_config=gen_config,
+                models_to_try=models_to_try,
+                log_context=chunk_label,
+                progress_cb=progress_cb,
+                progress_idx=idx / total
+            )
+            # Process the structured JSON response into notes
+            chunk_results = _process_structured_response(response_text, segment_dict, slide_dict)
+            all_results.extend(chunk_results)
+            
+        except SafetyFilterError:
+            # The LLM service already logged the warning. 
+            # We safely skip this chunk.
+            pass
+        except AllModelsFailedError:
+            # The LLM service already logged the failure.
+            # We safely skip this chunk.
+            pass
+        except Exception as e:
+            # Catch internal parsing errors (e.g., malformed JSON from the model)
+            msg = f"⚠️ Failed to parse output for {chunk_label}: {str(e)}"
             logger.error(msg)
-            if progress_cb:
-                progress_cb(idx / total, msg)
+            if progress_cb: progress_cb(idx / total, msg)
 
         # ── Rate-limit throttle between chunks ────────────────────────────────
         # This inter-chunk sleep is the primary defense against per-minute
