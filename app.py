@@ -32,6 +32,7 @@ from core.ai_aligner      import align_transcript_to_slides, discover_available_
 
 # ── Local Storage Modules ──────────────────────────────────────────────────────
 from core.storage import save_session, load_session, list_saved_sessions, FILES_DIR, SESSIONS_DIR
+from ui.assets import load_css, inject_jump_script
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PAGE CONFIG
@@ -43,228 +44,8 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# GLOBAL CSS — Premium Dark Theme
-# ═══════════════════════════════════════════════════════════════════════════════
-st.markdown("""
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
-  /* ── Base ─────────────────────────────────────────────────────────────── */
-  html, body, [class*="css"] {
-    font-family: 'Inter', sans-serif;
-  }
-
-  .stApp {
-    background: linear-gradient(160deg, #0d1117 0%, #0f1922 50%, #0d1117 100%);
-    color: #c9d1d9;
-  }
-
-  /* ── Sidebar ──────────────────────────────────────────────────────────── */
-  [data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #161b22 0%, #0d1117 100%) !important;
-    border-right: 1px solid rgba(255,255,255,0.06);
-  }
-
-  [data-testid="stSidebar"] * { color: #c9d1d9 !important; }
-
-  /* ── Hero header ──────────────────────────────────────────────────────── */
-  .hero-header {
-    text-align: center;
-    padding: 2rem 1rem 1.5rem;
-    background: linear-gradient(135deg,
-      rgba(74,144,226,0.08) 0%,
-      rgba(123,94,167,0.08) 50%,
-      rgba(100,176,255,0.08) 100%);
-    border: 1px solid rgba(100,160,255,0.12);
-    border-radius: 20px;
-    margin-bottom: 2rem;
-  }
-
-  .hero-title {
-    font-size: 2.4rem;
-    font-weight: 700;
-    background: linear-gradient(135deg, #4a90e2, #9b6dff, #64b0ff);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    line-height: 1.2;
-    margin-bottom: 0.5rem;
-  }
-
-  .hero-sub {
-    color: #8b949e;
-    font-size: 1rem;
-    font-weight: 400;
-  }
-
-  /* ── Section labels ───────────────────────────────────────────────────── */
-  .section-label {
-    font-size: 0.78rem;
-    font-weight: 600;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: #4a90e2;
-    margin-bottom: 0.6rem;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  /* ── Note card ────────────────────────────────────────────────────────── */
-  .note-card {
-    background: linear-gradient(135deg,
-      rgba(22,33,62,0.9) 0%,
-      rgba(15,26,60,0.9) 100%);
-    border: 1px solid rgba(100,160,255,0.15);
-    border-radius: 14px;
-    padding: 16px 18px;
-    margin-bottom: 14px;
-    transition: all 0.22s ease;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .note-card::before {
-    content: '';
-    position: absolute;
-    left: 0; top: 0; bottom: 0;
-    width: 3px;
-    background: linear-gradient(180deg, #4a90e2, #9b6dff);
-    border-radius: 3px 0 0 3px;
-  }
-
-  .note-card:hover {
-    border-color: rgba(100,160,255,0.35);
-    box-shadow: 0 8px 30px rgba(74,144,226,0.15);
-    transform: translateY(-2px);
-  }
-
-  .note-slide-badge {
-    display: inline-block;
-    background: rgba(74,144,226,0.18);
-    border: 1px solid rgba(74,144,226,0.35);
-    color: #4a90e2;
-    font-size: 0.72rem;
-    font-weight: 700;
-    padding: 2px 10px;
-    border-radius: 20px;
-    margin-bottom: 6px;
-    letter-spacing: 0.05em;
-  }
-
-  .note-title {
-    font-size: 0.95rem;
-    font-weight: 600;
-    color: #e6edf3;
-    margin-bottom: 6px;
-  }
-
-  .note-body {
-    font-size: 0.875rem;
-    color: #8b949e;
-    line-height: 1.6;
-    margin-bottom: 10px;
-  }
-
-  .note-ts {
-    font-size: 0.75rem;
-    color: #484f58;
-    font-variant-numeric: tabular-nums;
-  }
-
-  /* ── Jump button ──────────────────────────────────────────────────────── */
-  .jump-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    background: linear-gradient(135deg, rgba(74,144,226,0.2), rgba(123,94,167,0.2));
-    border: 1px solid rgba(100,160,255,0.3);
-    border-radius: 20px;
-    color: #64b0ff !important;
-    font-size: 0.78rem;
-    font-weight: 600;
-    padding: 4px 12px;
-    cursor: pointer;
-    text-decoration: none;
-    transition: all 0.18s ease;
-    font-family: inherit;
-    outline: none;
-  }
-
-  .jump-btn:hover {
-    background: linear-gradient(135deg, rgba(74,144,226,0.4), rgba(123,94,167,0.4));
-    border-color: rgba(100,160,255,0.6);
-    color: #fff !important;
-  }
-
-  /* ── Pipeline step badges ─────────────────────────────────────────────── */
-  .step-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 14px;
-    border-radius: 20px;
-    font-size: 0.8rem;
-    font-weight: 600;
-    margin-bottom: 6px;
-  }
-
-  .step-done    { background: rgba(46,160,67,0.15);  border: 1px solid rgba(46,160,67,0.3);  color: #3fb950; }
-  .step-pending { background: rgba(139,148,158,0.1); border: 1px solid rgba(139,148,158,0.2); color: #8b949e; }
-  .step-running { background: rgba(74,144,226,0.15); border: 1px solid rgba(74,144,226,0.3); color: #58a6ff; }
-
-  /* ── PDF column label ─────────────────────────────────────────────────── */
-  .col-label {
-    font-size: 0.78rem;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: #58a6ff;
-    margin-bottom: 8px;
-  }
-
-  /* ── Export JSON box ──────────────────────────────────────────────────── */
-  .export-box {
-    background: rgba(13,17,23,0.8);
-    border: 1px solid rgba(100,160,255,0.15);
-    border-radius: 10px;
-    padding: 12px 16px;
-    font-size: 0.78rem;
-    color: #8b949e;
-    margin-top: 1rem;
-  }
-
-  /* ── Streamlit button overrides ───────────────────────────────────────── */
-  .stButton > button {
-    background: linear-gradient(135deg, #1f6feb, #388bfd) !important;
-    border: none !important;
-    border-radius: 8px !important;
-    color: white !important;
-    font-weight: 600 !important;
-    transition: all 0.2s ease !important;
-  }
-
-  .stButton > button:hover {
-    box-shadow: 0 4px 20px rgba(56,139,253,0.4) !important;
-    transform: translateY(-1px) !important;
-  }
-
-  /* ── Divider ──────────────────────────────────────────────────────────── */
-  hr { border-color: rgba(255,255,255,0.06) !important; }
-
-  /* ── Scrollable notes panel ───────────────────────────────────────────── */
-  .notes-panel {
-    max-height: 68vh;
-    overflow-y: auto;
-    padding-right: 4px;
-  }
-
-  .notes-panel::-webkit-scrollbar       { width: 4px; }
-  .notes-panel::-webkit-scrollbar-track { background: transparent; }
-  .notes-panel::-webkit-scrollbar-thumb { background: rgba(100,160,255,0.25); border-radius: 2px; }
-</style>
-""", unsafe_allow_html=True)
+# Load External CSS
+load_css()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -447,56 +228,6 @@ def _render_pdf_viewer_images():
         caption=f"Showing slide {st.session_state.active_slide} of {num_pages}"
     )
 
-
-def _inject_jump_script():
-    """
-    Injects a highly efficient event-delegation script into the parent document.
-    It survives Streamlit UI refreshes and satisfies browser autoplay security 
-    because it fires directly from the user's click gesture.
-    """
-    js_code = """
-    <script>
-    (function() {
-        try {
-            // Get the main Streamlit document safely
-            var parentDoc = window.parent.document || document;
-            
-            // Safety Check: Only attach this master listener ONCE per session.
-            if (parentDoc.__jumpScriptAdded) return;
-            parentDoc.__jumpScriptAdded = true;
-
-            // Master Click Listener attached to the entire page
-            parentDoc.body.addEventListener('click', function(e) {
-                // Check if what the user clicked (or its parent) is a jump button
-                var btn = e.target.closest('.jump-btn');
-                if (!btn) return; // If it's not a jump button, ignore the click
-
-                e.preventDefault();
-                e.stopPropagation();
-
-                var time = parseFloat(btn.getAttribute('data-time'));
-                var audioEl = parentDoc.querySelector('audio'); // Find Streamlit's native audio
-
-                if (audioEl && !isNaN(time)) {
-                    audioEl.currentTime = time;
-                    
-                    // Call play directly inside the click event to bypass security blocks
-                    var playPromise = audioEl.play();
-                    if (playPromise !== undefined) {
-                        playPromise.catch(function(error) {
-                            console.warn("Autoplay warning (usually ignorable):", error);
-                        });
-                    }
-                }
-            });
-        } catch(e) {
-            console.error("Failed to initialize jump script:", e);
-        }
-    })();
-    </script>
-    """
-    import streamlit.components.v1 as components
-    components.html(js_code, height=0, width=0)
 
 def _render_note_card(note: dict, idx: int):
     """
@@ -1027,7 +758,7 @@ if st.session_state.final_output:
                 unsafe_allow_html=True,
             )
         st.markdown('</div>', unsafe_allow_html=True)
-        _inject_jump_script()
+        inject_jump_script()
 
     # ── Raw JSON preview ──────────────────────────────────────────────────────
     with st.expander("🗂️ View Raw Output JSON"):
