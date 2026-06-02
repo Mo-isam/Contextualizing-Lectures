@@ -9,8 +9,10 @@ import os
 import json
 import time
 import fitz          # PyMuPDF
-import streamlit as st
+import logging
 from PIL import Image
+
+logger = logging.getLogger(__name__)
 
 try:
     import google.generativeai as genai
@@ -209,7 +211,10 @@ def extract_slide_text_ai(image_paths: list[str], api_key: str, models_to_try: l
                     
                     # 1. Blocked by Copyright / Safety
                     if "finish_reason" in exc_str or "valid Part" in exc_str or "safety" in exc_str.lower():
-                        st.warning(f"⚠️ AI Copyright/Safety filter blocked reading slides {start_page}-{end_page}. Injecting placeholders.")
+                        msg = f"⚠️ AI Copyright/Safety filter blocked reading slides {start_page}-{end_page}. Injecting placeholders."
+                        logger.warning(msg)
+                        if progress_cb: progress_cb(i / total_images, msg)
+                        
                         for p in range(start_page, end_page + 1):
                             all_slides.append({
                                 "page_number": p, 
@@ -221,16 +226,22 @@ def extract_slide_text_ai(image_paths: list[str], api_key: str, models_to_try: l
                         
                     # 2. Hard Quota Exhausted or Model Not Found -> Swap to next model immediately
                     if ("limit: 0" in exc_str) or ("404" in exc_str):
-                        st.warning(f"⚠️ Model {model_id} exhausted/unavailable. Swapping models...")
+                        msg = f"⚠️ Model {model_id} exhausted/unavailable. Swapping models..."
+                        logger.warning(msg)
+                        if progress_cb: progress_cb(i / total_images, msg)
                         break
                         
                     # 3. Rate Limit (429) -> Sleep and retry
                     wait = 15 + (attempt * 5)
-                    st.warning(f"⏳ {model_id} rate limited. Waiting {wait}s...")
+                    msg = f"⏳ {model_id} rate limited. Waiting {wait}s..."
+                    logger.warning(msg)
+                    if progress_cb: progress_cb(i / total_images, msg)
                     time.sleep(wait)
         
         if not chunk_success:
-            st.error(f"❌ All models failed on slides {start_page}-{end_page}. Skipping.")
+            msg = f"❌ All models failed on slides {start_page}-{end_page}. Skipping."
+            logger.error(msg)
+            if progress_cb: progress_cb(i / total_images, msg)
             
         # Free API tier rate limit protection between batches
         if chunk_success and (i + BATCH_SIZE < total_images):
