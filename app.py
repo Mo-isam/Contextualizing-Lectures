@@ -25,10 +25,10 @@ import shutil
 
 # ── Local modules ──────────────────────────────────────────────────────────────
 import tempfile
-from file_utils      import save_file, convert_pptx_to_pdf, SUPPORTED_MEDIA_EXT
-from audio_processor import process_media_file
-from pdf_processor   import extract_slide_text, get_pdf_info
-from ai_aligner      import align_transcript_to_slides
+from core.file_utils      import save_file, convert_pptx_to_pdf, SUPPORTED_MEDIA_EXT
+from core.audio_processor import process_media_file
+from core.pdf_processor   import extract_slide_text, get_pdf_info, render_pdf_to_images, extract_slide_text_ai
+from core.ai_aligner      import align_transcript_to_slides, discover_available_models, GEMINI_MODEL_PRIORITY
 
 # ── Persistent Local Storage Helpers ───────────────────────────────────────────
 DATA_STORAGE_DIR = os.path.join(os.path.dirname(__file__), "data_storage")
@@ -484,7 +484,6 @@ def _render_pdf_viewer_images():
         if st.session_state.pdf_path:
             temp_dir = get_or_create_temp_dir()
             img_dir = os.path.join(temp_dir, "slide_images")
-            from pdf_processor import render_pdf_to_images
             try:
                 with st.spinner("🎨 Rendering slide images for display..."):
                     st.session_state.slide_images = render_pdf_to_images(st.session_state.pdf_path, img_dir)
@@ -689,7 +688,6 @@ with st.sidebar:
         if not st.session_state.discovered_models or st.session_state.get("last_api_key") != api_key.strip():
             with st.spinner("🔍 Discovering available models..."):
                 try:
-                    from ai_aligner import discover_available_models
                     models = discover_available_models(api_key)
                     if models:
                         st.session_state.discovered_models = models
@@ -836,7 +834,7 @@ with st.sidebar:
                         if not st.session_state.audio_path or not os.path.exists(st.session_state.audio_path):
                             if st.session_state.media_path and st.session_state.media_path.endswith(".mp4"):
                                 with st.spinner("⏳ Upgrading Legacy Session: Extracting audio permanently..."):
-                                    from audio_processor import extract_audio_from_video
+                                    from core.audio_processor import extract_audio_from_video
                                     
                                     base_name = os.path.splitext(os.path.basename(st.session_state.media_path))[0]
                                     perm_audio_path = os.path.join(FILES_DIR, f"{base_name}_audio.wav")
@@ -943,7 +941,6 @@ if files_ready and st.session_state.final_output is None:
         temp_dir = get_or_create_temp_dir()
 
         # Build dynamic model priority list for all AI tasks
-        from ai_aligner import GEMINI_MODEL_PRIORITY
         models_to_try = [selected_model] if selected_model else []
         for m in discovered_models:
             if m not in models_to_try: models_to_try.append(m)
@@ -978,7 +975,6 @@ if files_ready and st.session_state.final_output is None:
                 # Always render images first (needed for both Native display and AI Vision OCR)
                 status_box.update(label="🎨 Rendering slide pages to crisp images...")
                 img_dir = os.path.join(temp_dir, "slide_images")
-                from pdf_processor import render_pdf_to_images, extract_slide_text_ai
                 st.session_state.slide_images = render_pdf_to_images(st.session_state.pdf_path, img_dir)
                 st.session_state.active_slide = 1
 

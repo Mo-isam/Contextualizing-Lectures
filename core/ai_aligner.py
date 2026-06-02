@@ -277,7 +277,7 @@ def align_transcript_to_slides(
             models_to_try.append(m)
 
     # ── Prepare context and mapping dictionaries ──────────────────────────────
-    from pdf_processor import format_slides_for_prompt
+    from core.pdf_processor import format_slides_for_prompt
     slides_text = format_slides_for_prompt(slides)
     
     # O(1) lookup dictionaries for post-processing
