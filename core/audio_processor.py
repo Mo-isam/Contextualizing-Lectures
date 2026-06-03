@@ -13,6 +13,8 @@ import subprocess
 import time
 import logging
 
+from core.llm_service import generate_content_with_fallback, SafetyFilterError, AllModelsFailedError
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -211,62 +213,50 @@ def transcribe_audio_ai(audio_path: str, temp_dir: str, api_key: str, models_to_
             gemini_file = genai.get_file(gemini_file.name)
             
         chunk_success = False
-        for model_id in models_to_try:
-            if chunk_success: break
-            model = genai.GenerativeModel(model_id)
+        try:
+            prompt = "Transcribe this audio exactly. Do not summarize."
+            response_text = generate_content_with_fallback(
+                contents=[gemini_file, prompt],
+                generation_config=config,
+                models_to_try=models_to_try,
+                log_context=f"audio chunk {i+1}",
+                progress_cb=progress_cb,
+                progress_idx=i / total_chunks,
+                max_retries=3
+            )
+            data = json.loads(response_text)
             
-            for attempt in range(1, 4):
-                try:
-                    prompt = "Transcribe this audio exactly. Do not summarize."
-                    response = model.generate_content([gemini_file, prompt], generation_config=config)
-                    data = json.loads(response.text) # Triggers error if blocked
-                    
-                    for seg in data.get("segments", []):
-                        all_segments.append({
-                            "id": global_id,
-                            "start": round(seg["start"] + time_offset, 2),
-                            "end": round(seg["end"] + time_offset, 2),
-                            "text": seg["text"].strip()
-                        })
-                        global_id += 1
-                        
-                    chunk_success = True
-                    break
-                except Exception as e:
-                    exc_str = str(e)
-                    
-                    if "finish_reason" in exc_str or "valid Part" in exc_str or "safety" in exc_str.lower():
-                        msg = f"⚠️ Audio chunk {i+1} blocked by AI Safety filter. Inserting blank segment."
-                        logger.warning(msg)
-                        if progress_cb: progress_cb(i/total_chunks, msg)
-                        
-                        all_segments.append({
-                            "id": global_id, "start": time_offset, "end": time_offset + 300.0,
-                            "text": "[Audio transcription blocked by AI safety filter]"
-                        })
-                        global_id += 1
-                        chunk_success = True
-                        break
-                        
-                    if ("limit: 0" in exc_str) or ("404" in exc_str):
-                        msg = f"⚠️ Model {model_id} exhausted. Swapping models..."
-                        logger.warning(msg)
-                        if progress_cb: progress_cb(i/total_chunks, msg)
-                        break
-                        
-                    wait = 15 + (attempt * 5)
-                    msg = f"⏳ {model_id} rate limited. Waiting {wait}s..."
-                    logger.warning(msg)
-                    if progress_cb: progress_cb(i/total_chunks, msg)
-                    time.sleep(wait)
-
-        genai.delete_file(gemini_file.name) # Clean up cloud storage regardless of success
-        
-        if not chunk_success:
-            msg = f"❌ All models failed on audio chunk {i+1}."
+            for seg in data.get("segments", []):
+                all_segments.append({
+                    "id": global_id,
+                    "start": round(seg["start"] + time_offset, 2),
+                    "end": round(seg["end"] + time_offset, 2),
+                    "text": seg["text"].strip()
+                })
+                global_id += 1
+                
+            chunk_success = True
+            
+        except SafetyFilterError:
+            all_segments.append({
+                "id": global_id, "start": time_offset, "end": time_offset + 300.0,
+                "text": "[Audio transcription blocked by AI safety filter]"
+            })
+            global_id += 1
+            chunk_success = True # Bypass success
+            
+        except AllModelsFailedError:
+            chunk_success = False
+            
+        except Exception as e:
+            msg = f"⚠️ Parse error on audio chunk {i+1}: {str(e)}"
             logger.error(msg)
-            if progress_cb: progress_cb(i/total_chunks, msg)
+            if progress_cb: progress_cb(i / total_chunks, msg)
+            chunk_success = False
             
+        finally:
+            genai.delete_file(gemini_file.name) # Clean up cloud storage regardless of success
+
         if chunk_success and i < total_chunks - 1:
             time.sleep(15)
 
