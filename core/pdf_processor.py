@@ -13,6 +13,7 @@ import logging
 from PIL import Image
 
 from core.llm_service import generate_content_with_fallback, SafetyFilterError, AllModelsFailedError
+from core.models import Slide
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ except ImportError:
 fitz.TOOLS.mupdf_display_errors(False)
 
 
-def extract_slide_text(pdf_path: str) -> list[dict]:
+def extract_slide_text(pdf_path: str) -> list[Slide]:
     """
     Extract text from every page of a PDF and return a Slide Text Array.
 
@@ -71,17 +72,17 @@ def extract_slide_text(pdf_path: str) -> list[dict]:
         if len(title) > 120:
             title = title[:117] + "…"
 
-        slides.append({
-            "page_number": page_index + 1,
-            "title"      : title,
-            "text"       : raw_text if raw_text else "(No text found on this slide)",
-        })
+        slides.append(Slide(
+            page_number=page_index + 1,
+            title=title,
+            text=raw_text if raw_text else "(No text found on this slide)"
+        ))
 
     doc.close()
     return slides
 
 
-def format_slides_for_prompt(slides: list[dict]) -> str:
+def format_slides_for_prompt(slides: list[Slide]) -> str:
     """
     Serialise the Slide Text Array into a compact, readable string
     that can be injected directly into a Gemini prompt.
@@ -96,8 +97,9 @@ def format_slides_for_prompt(slides: list[dict]) -> str:
     """
     parts = []
     for slide in slides:
-        header = f"[Slide {slide['page_number']} | Title: {slide['title']}]"
-        parts.append(f"{header}\n{slide['text']}")
+        # Note the change from dictionary access to dot-notation attributes
+        header = f"[Slide {slide.page_number} | Title: {slide.title}]"
+        parts.append(f"{header}\n{slide.text}")
     return "\n\n".join(parts)
 
 
@@ -145,7 +147,7 @@ def get_pdf_info(pdf_path: str) -> dict:
         return {"page_count": 0, "title": "Unknown", "author": "Unknown"}
 
 
-def extract_slide_text_ai(image_paths: list[str], api_key: str, models_to_try: list[str], progress_cb=None) -> list[dict]:
+def extract_slide_text_ai(image_paths: list[str], api_key: str, models_to_try: list[str], progress_cb=None) -> list[Slide]:
     """
     Extract text from slide PNGs using Gemini Vision. 
     Includes multi-model quota hot-swapping and copyright/safety filter bypass.
@@ -208,17 +210,22 @@ def extract_slide_text_ai(image_paths: list[str], api_key: str, models_to_try: l
                 max_retries=3
             )
             data = json.loads(response_text)
-            all_slides.extend(data.get("extracted_slides", []))
+            for s in data.get("extracted_slides", []):
+                all_slides.append(Slide(
+                    page_number=s.get("page_number", 0),
+                    title=s.get("title", ""),
+                    text=s.get("text", "")
+                ))
             chunk_success = True
             
         except SafetyFilterError:
             # If AI refuses to read due to copyright/safety, inject placeholders
             for p in range(start_page, end_page + 1):
-                all_slides.append({
-                    "page_number": p, 
-                    "title": f"Slide {p}", 
-                    "text": "(Text extraction blocked by AI safety/copyright filter)"
-                })
+                all_slides.append(Slide(
+                    page_number=p, 
+                    title=f"Slide {p}", 
+                    text="(Text extraction blocked by AI safety/copyright filter)"
+                ))
             chunk_success = True # Treated as a successful bypass
             
         except AllModelsFailedError:
@@ -235,5 +242,5 @@ def extract_slide_text_ai(image_paths: list[str], api_key: str, models_to_try: l
             time.sleep(15)
             
     # Ensure correct page numbering and sorting
-    all_slides.sort(key=lambda x: x.get("page_number", 0))
+    all_slides.sort(key=lambda x: x.page_number)
     return all_slides

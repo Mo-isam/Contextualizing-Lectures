@@ -24,6 +24,7 @@ import re
 import logging
 
 from core.llm_service import generate_content_with_fallback, SafetyFilterError, AllModelsFailedError
+from core.models import TranscriptSegment, Slide, AlignedNote
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ GEMINI_MODEL_PRIORITY = [
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-def _chunk_segments(segments: list[dict], chunk_duration: int) -> list[list[dict]]:
+def _chunk_segments(segments: list[TranscriptSegment], chunk_duration: int) -> list[list[TranscriptSegment]]:
     """
     Group Whisper segments into time-based chunks of ~chunk_duration seconds.
     A segment is never split — it belongs entirely to one chunk.
@@ -61,10 +62,10 @@ def _chunk_segments(segments: list[dict], chunk_duration: int) -> list[list[dict
     chunk_start   = 0.0
 
     for seg in segments:
-        if current_chunk and (seg["start"] - chunk_start) >= chunk_duration:
+        if current_chunk and (seg.start - chunk_start) >= chunk_duration:
             chunks.append(current_chunk)
             current_chunk = []
-            chunk_start   = seg["start"]
+            chunk_start   = seg.start
         current_chunk.append(seg)
 
     if current_chunk:
@@ -73,10 +74,10 @@ def _chunk_segments(segments: list[dict], chunk_duration: int) -> list[list[dict
     return chunks
 
 
-def _format_chunk_for_prompt(chunk: list[dict]) -> str:
+def _format_chunk_for_prompt(chunk: list[TranscriptSegment]) -> str:
     lines = []
     for seg in chunk:
-        lines.append(f"[ID: {seg['id']}] {seg['text']}")
+        lines.append(f"[ID: {seg.id}] {seg.text}")
     return "\n".join(lines)
 
 
@@ -111,7 +112,7 @@ Your job is to MAP the spoken Segment IDs to the most relevant slide number.
 """.strip()
 
 
-def _process_structured_response(response_text: str, segment_dict: dict, slide_dict: dict) -> list[dict]:
+def _process_structured_response(response_text: str, segment_dict: dict[int, TranscriptSegment], slide_dict: dict[int, str]) -> list[AlignedNote]:
     """Parse the Structured Output JSON and mathematically group IDs into continuous timestamp blocks."""
     data = json.loads(response_text)
     alignments = data.get("alignments", [])
@@ -141,18 +142,18 @@ def _process_structured_response(response_text: str, segment_dict: dict, slide_d
             valid_segs = [segment_dict[vid] for vid in block if vid in segment_dict]
             if not valid_segs: continue
             
-            t_start = valid_segs[0]["start"]
-            t_end = valid_segs[-1]["end"]
-            transcript_text = " ".join([seg["text"] for seg in valid_segs])
+            t_start = valid_segs[0].start
+            t_end = valid_segs[-1].end
+            transcript_text = " ".join([seg.text for seg in valid_segs])
             
-            final_notes.append({
-                "slide_number": s_num,
-                "slide_title": s_title,
-                "exact_transcript": transcript_text,
-                "ai_insight": insight,
-                "timestamp_start": t_start,
-                "timestamp_end": t_end
-            })
+            final_notes.append(AlignedNote(
+                slide_number=s_num,
+                slide_title=s_title,
+                exact_transcript=transcript_text,
+                ai_insight=insight,
+                timestamp_start=t_start,
+                timestamp_end=t_end
+            ))
             
     return final_notes
 
@@ -187,8 +188,8 @@ def discover_available_models(api_key: str) -> list[str]:
 # ── Main Alignment Function ────────────────────────────────────────────────────
 
 def align_transcript_to_slides(
-    segments    : list[dict],
-    slides      : list[dict],
+    segments    : list[TranscriptSegment],
+    slides      : list[Slide],
     api_key     : str,
     model_name  : str  = "",          # overrides GEMINI_MODEL_PRIORITY[0] if set
     progress_cb         = None,
@@ -237,8 +238,8 @@ def align_transcript_to_slides(
     slides_text = format_slides_for_prompt(slides)
     
     # O(1) lookup dictionaries for post-processing
-    segment_dict = {seg["id"]: seg for seg in segments}
-    slide_dict = {s["page_number"]: s["title"] for s in slides}
+    segment_dict = {seg.id: seg for seg in segments}
+    slide_dict = {s.page_number: s.title for s in slides}
     slide_dict[0] = "General / Off-topic"
 
     # ── Split transcript into chunks ──────────────────────────────────────────
@@ -248,11 +249,11 @@ def align_transcript_to_slides(
     if progress_cb:
         progress_cb(0.0, f"Starting alignment — {total} chunk(s) to process…")
 
-    all_results: list[dict] = []
+    all_results: list[AlignedNote] = []
 
     for idx, chunk in enumerate(chunks):
-        chunk_start = chunk[0]["start"]
-        chunk_end   = chunk[-1]["end"]
+        chunk_start = chunk[0].start
+        chunk_end   = chunk[-1].end
         chunk_label = f"Chunk {idx + 1}/{total} ({_fmt_seconds(chunk_start)}–{_fmt_seconds(chunk_end)})"
 
         if progress_cb:
@@ -333,7 +334,7 @@ def align_transcript_to_slides(
                 time.sleep(INTER_CHUNK_SLEEP_SEC)
 
     # ── Merge & sort by timestamp ──────────────────────────────────────────────
-    all_results.sort(key=lambda x: x.get("timestamp_start", 0))
+    all_results.sort(key=lambda x: x.timestamp_start)
 
     if progress_cb:
         progress_cb(1.0, f"✅ Alignment complete — {len(all_results)} note(s) generated.")

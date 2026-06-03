@@ -14,6 +14,7 @@ import time
 import logging
 
 from core.llm_service import generate_content_with_fallback, SafetyFilterError, AllModelsFailedError
+from core.models import TranscriptSegment
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +97,7 @@ def extract_audio_from_video(video_path: str, output_dir: str) -> str:
 
 # ── 2. Whisper Transcription ───────────────────────────────────────────────────
 
-def transcribe_audio(audio_path: str) -> list[dict]:
+def transcribe_audio(audio_path: str) -> list[TranscriptSegment]:
     """
     Transcribe an audio file with the local OpenAI Whisper model.
 
@@ -136,19 +137,19 @@ def transcribe_audio(audio_path: str) -> list[dict]:
     # Normalise output — keep only the fields we need.
     segments = []
     for seg in result.get("segments", []):
-        segments.append({
-            "id"   : seg["id"],
-            "start": round(seg["start"], 2),
-            "end"  : round(seg["end"],   2),
-            "text" : seg["text"].strip(),
-        })
+        segments.append(TranscriptSegment(
+            id=seg["id"],
+            start=round(seg["start"], 2),
+            end=round(seg["end"], 2),
+            text=seg["text"].strip(),
+        ))
 
     return segments
 
 
 # ── 3. AI Audio Transcription (Gemini) ─────────────────────────────────────────
 
-def transcribe_audio_ai(audio_path: str, temp_dir: str, api_key: str, models_to_try: list[str], progress_cb=None) -> list[dict]:
+def transcribe_audio_ai(audio_path: str, temp_dir: str, api_key: str, models_to_try: list[str], progress_cb=None) -> list[TranscriptSegment]:
     """Transcribe audio using Gemini, with hot-swapping for quotas and chunking for token limits."""
     if not GENAI_AVAILABLE:
         raise ImportError("google-generativeai is not installed.")
@@ -227,21 +228,23 @@ def transcribe_audio_ai(audio_path: str, temp_dir: str, api_key: str, models_to_
             data = json.loads(response_text)
             
             for seg in data.get("segments", []):
-                all_segments.append({
-                    "id": global_id,
-                    "start": round(seg["start"] + time_offset, 2),
-                    "end": round(seg["end"] + time_offset, 2),
-                    "text": seg["text"].strip()
-                })
+                all_segments.append(TranscriptSegment(
+                    id=global_id,
+                    start=round(seg["start"] + time_offset, 2),
+                    end=round(seg["end"] + time_offset, 2),
+                    text=seg["text"].strip()
+                ))
                 global_id += 1
                 
             chunk_success = True
             
         except SafetyFilterError:
-            all_segments.append({
-                "id": global_id, "start": time_offset, "end": time_offset + 300.0,
-                "text": "[Audio transcription blocked by AI safety filter]"
-            })
+            all_segments.append(TranscriptSegment(
+                id=global_id, 
+                start=time_offset, 
+                end=time_offset + 300.0,
+                text="[Audio transcription blocked by AI safety filter]"
+            ))
             global_id += 1
             chunk_success = True # Bypass success
             
@@ -265,7 +268,7 @@ def transcribe_audio_ai(audio_path: str, temp_dir: str, api_key: str, models_to_
 
 # ── 4. Orchestration Helper ────────────────────────────────────────────────────
 
-def process_media_file(media_path: str, temp_dir: str, engine: str = "local", api_key: str = "", models_to_try: list = None, progress_cb=None) -> list[dict]:
+def process_media_file(media_path: str, temp_dir: str, engine: str = "local", api_key: str = "", models_to_try: list = None, progress_cb=None) -> list[TranscriptSegment]:
     ext = os.path.splitext(media_path)[1].lower()
     audio_dir = os.path.join(temp_dir, "audio")
 
