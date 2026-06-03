@@ -19,8 +19,16 @@ def seconds_to_hms(s: float) -> str:
 
 def render_audio_player():
     """Render Streamlit's highly optimized native audio streaming player."""
-    if st.session_state.get("audio_path") and os.path.exists(st.session_state.audio_path):
-        st.audio(st.session_state.audio_path)
+    audio_path = st.session_state.get("audio_path")
+    media_path = st.session_state.get("media_path")
+    
+    # Fallback: If the extracted .wav was deleted, play the original .mp4 / .mp3
+    target_path = audio_path if (audio_path and os.path.exists(audio_path)) else media_path
+    
+    if target_path and os.path.exists(target_path):
+        st.audio(target_path)
+    else:
+        st.warning("⚠️ Audio file could not be found. The 'Play at' buttons will not work.")
 
 
 def render_pdf_viewer_images(temp_dir: str):

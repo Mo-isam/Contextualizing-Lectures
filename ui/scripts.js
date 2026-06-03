@@ -1,37 +1,38 @@
 (function() {
     try {
-        // Get the main Streamlit document safely
-        var parentDoc = window.parent.document || document;
+        var parent = window.parent || window;
+        var parentDoc = parent.document;
         
-        // Safety Check: Only attach this master listener ONCE per session.
-        if (parentDoc.__jumpScriptAdded) return;
-        parentDoc.__jumpScriptAdded = true;
-
-        // Master Click Listener attached to the entire page
-        parentDoc.body.addEventListener('click', function(e) {
-            // Check if what the user clicked (or its parent) is a jump button
+        // Unbind any old listeners if Streamlit triggers a hot-reload
+        if (parent.jumpToTimeHandler) {
+            parentDoc.removeEventListener('click', parent.jumpToTimeHandler);
+        }
+        
+        // Define the master click handler
+        parent.jumpToTimeHandler = function(e) {
             var btn = e.target.closest('.jump-btn');
-            if (!btn) return; // If it's not a jump button, ignore the click
+            if (!btn) return;
 
             e.preventDefault();
             e.stopPropagation();
 
             var time = parseFloat(btn.getAttribute('data-time'));
-            var audioEl = parentDoc.querySelector('audio'); // Find Streamlit's native audio
-
+            var audioEl = parentDoc.querySelector('audio'); 
+            
             if (audioEl && !isNaN(time)) {
                 audioEl.currentTime = time;
-                
-                // Call play directly inside the click event to bypass security blocks
                 var playPromise = audioEl.play();
                 if (playPromise !== undefined) {
-                    playPromise.catch(function(error) {
-                        console.warn("Autoplay warning (usually ignorable):", error);
-                    });
+                    playPromise.catch(function(err) { console.warn("Autoplay block:", err); });
                 }
+            } else {
+                console.error("Lecture AI: Jump Button Clicked, but no <audio> element found on the page!");
             }
-        });
+        };
+
+        // Bind the fresh listener
+        parentDoc.addEventListener('click', parent.jumpToTimeHandler);
     } catch(e) {
-        console.error("Failed to initialize jump script:", e);
+        console.error("Lecture AI: Failed to initialize jump script:", e);
     }
 })();
