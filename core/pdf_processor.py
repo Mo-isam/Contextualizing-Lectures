@@ -12,6 +12,8 @@ import fitz          # PyMuPDF
 import logging
 from PIL import Image
 
+from core.llm_service import generate_content_with_fallback, SafetyFilterError, AllModelsFailedError
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -195,53 +197,38 @@ def extract_slide_text_ai(image_paths: list[str], api_key: str, models_to_try: l
         end_page   = min(i + BATCH_SIZE, total_images)
         chunk_success = False
         
-        for model_id in models_to_try:
-            if chunk_success: break
-            model = genai.GenerativeModel(model_id)
+        try:
+            response_text = generate_content_with_fallback(
+                contents=prompt,
+                generation_config=config,
+                models_to_try=models_to_try,
+                log_context=f"slides {start_page}-{end_page}",
+                progress_cb=progress_cb,
+                progress_idx=i / total_images,
+                max_retries=3
+            )
+            data = json.loads(response_text)
+            all_slides.extend(data.get("extracted_slides", []))
+            chunk_success = True
             
-            for attempt in range(1, 4):  # Max 3 retries
-                try:
-                    response = model.generate_content(prompt, generation_config=config)
-                    data = json.loads(response.text) # Will trigger error if blocked by copyright
-                    all_slides.extend(data.get("extracted_slides", []))
-                    chunk_success = True
-                    break
-                except Exception as e:
-                    exc_str = str(e)
-                    
-                    # 1. Blocked by Copyright / Safety
-                    if "finish_reason" in exc_str or "valid Part" in exc_str or "safety" in exc_str.lower():
-                        msg = f"⚠️ AI Copyright/Safety filter blocked reading slides {start_page}-{end_page}. Injecting placeholders."
-                        logger.warning(msg)
-                        if progress_cb: progress_cb(i / total_images, msg)
-                        
-                        for p in range(start_page, end_page + 1):
-                            all_slides.append({
-                                "page_number": p, 
-                                "title": f"Slide {p}", 
-                                "text": "(Text extraction blocked by AI safety/copyright filter)"
-                            })
-                        chunk_success = True
-                        break
-                        
-                    # 2. Hard Quota Exhausted or Model Not Found -> Swap to next model immediately
-                    if ("limit: 0" in exc_str) or ("404" in exc_str):
-                        msg = f"⚠️ Model {model_id} exhausted/unavailable. Swapping models..."
-                        logger.warning(msg)
-                        if progress_cb: progress_cb(i / total_images, msg)
-                        break
-                        
-                    # 3. Rate Limit (429) -> Sleep and retry
-                    wait = 15 + (attempt * 5)
-                    msg = f"⏳ {model_id} rate limited. Waiting {wait}s..."
-                    logger.warning(msg)
-                    if progress_cb: progress_cb(i / total_images, msg)
-                    time.sleep(wait)
-        
-        if not chunk_success:
-            msg = f"❌ All models failed on slides {start_page}-{end_page}. Skipping."
+        except SafetyFilterError:
+            # If AI refuses to read due to copyright/safety, inject placeholders
+            for p in range(start_page, end_page + 1):
+                all_slides.append({
+                    "page_number": p, 
+                    "title": f"Slide {p}", 
+                    "text": "(Text extraction blocked by AI safety/copyright filter)"
+                })
+            chunk_success = True # Treated as a successful bypass
+            
+        except AllModelsFailedError:
+            chunk_success = False
+            
+        except Exception as e:
+            msg = f"⚠️ Parse error on slides {start_page}-{end_page}: {str(e)}"
             logger.error(msg)
             if progress_cb: progress_cb(i / total_images, msg)
+            chunk_success = False
             
         # Free API tier rate limit protection between batches
         if chunk_success and (i + BATCH_SIZE < total_images):
