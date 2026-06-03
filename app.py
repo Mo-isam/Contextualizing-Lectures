@@ -283,7 +283,9 @@ with st.sidebar:
 
     # ── Export ────────────────────────────────────────────────────────────────
     if st.session_state.final_output:
-        json_str = json.dumps(st.session_state.final_output, indent=2, ensure_ascii=False)
+        from dataclasses import asdict
+        export_data = [asdict(n) for n in st.session_state.final_output]
+        json_str = json.dumps(export_data, indent=2, ensure_ascii=False)
         st.download_button(
             label="⬇️ Export Notes JSON",
             data=json_str,
@@ -574,7 +576,7 @@ if st.session_state.final_output:
         notes = st.session_state.final_output
         
         # --- NEW: Catch and display Slide 0 (General/Off-topic) notes ---
-        general_notes = [n for n in notes if n.get("slide_number") == 0]
+        general_notes = [n for n in notes if n.slide_number == 0]
         if general_notes:
             with st.expander(f"🗣️ General / Off-Slide Discussion ({len(general_notes)})", expanded=False):
                 for i, note in enumerate(general_notes):
@@ -582,7 +584,7 @@ if st.session_state.final_output:
         # ----------------------------------------------------------------
 
         # Filter notes for the active slide
-        filtered = [n for n in notes if n.get("slide_number") == active_slide]
+        filtered = [n for n in notes if n.slide_number == active_slide]
         
         st.markdown(
             f'<div class="col-label" style="margin-top: 10px;">🧠 Slide {active_slide} Notes &nbsp;<span style="color:#484f58;font-weight:400;font-size:0.72rem;text-transform:none;">{len(filtered)} insight(s)</span></div>',
@@ -595,8 +597,9 @@ if st.session_state.final_output:
         if search_q.strip():
             q = search_q.strip().lower()
             filtered = [n for n in filtered
-                        if q in n.get("spoken_notes", "").lower()
-                        or q in n.get("slide_title", "").lower()]
+                        if q in n.spoken_notes.lower()
+                        or q in n.slide_title.lower()
+                        or q in n.exact_transcript.lower()]
 
         # Render note cards
         st.markdown('<div class="notes-panel">', unsafe_allow_html=True)
@@ -624,7 +627,8 @@ if st.session_state.final_output:
 
     # ── Raw JSON preview ──────────────────────────────────────────────────────
     with st.expander("🗂️ View Raw Output JSON"):
-        st.json(st.session_state.final_output)
+        from dataclasses import asdict
+        st.json([asdict(n) for n in st.session_state.final_output])
 
 # ── Empty state ───────────────────────────────────────────────────────────────
 elif not files_ready:

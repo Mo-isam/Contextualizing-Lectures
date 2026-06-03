@@ -8,6 +8,9 @@ import os
 import json
 import time
 import shutil
+from dataclasses import asdict
+
+from core.models import TranscriptSegment, Slide, AlignedNote
 
 # Move up one directory from /core to reach the root project folder
 ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -56,15 +59,19 @@ def save_session(session_name: str, state: dict, temp_dir: str = None) -> str:
         elif media_ext.lower() in [".mp3", ".wav"]:
             saved_audio_path = saved_media_path
 
+    def _to_dict(obj_list):
+        if not obj_list: return None
+        return [asdict(item) if hasattr(item, '__dataclass_fields__') else item for item in obj_list]
+
     metadata = {
         "session_name"        : session_name,
         "session_id"          : session_id,
         "pdf_path"            : saved_pdf_path,
         "media_path"          : saved_media_path,
         "audio_path"          : saved_audio_path,
-        "transcript_segments" : state.get("transcript_segments"),
-        "slides"              : state.get("slides"),
-        "final_output"        : state.get("final_output"),
+        "transcript_segments" : _to_dict(state.get("transcript_segments")),
+        "slides"              : _to_dict(state.get("slides")),
+        "final_output"        : _to_dict(state.get("final_output")),
         "timestamp"           : time.time(),
     }
 
@@ -109,5 +116,22 @@ def load_session(filename: str) -> dict:
         if val and val.startswith("files/"):
             file_name = os.path.basename(val)
             data[key] = os.path.join(FILES_DIR, file_name)
+            
+    # Upgrade JSON dicts back to Dataclass objects for the rest of the app
+    if data.get("transcript_segments"):
+        data["transcript_segments"] = [TranscriptSegment(**item) for item in data["transcript_segments"]]
+    if data.get("slides"):
+        data["slides"] = [Slide(**item) for item in data["slides"]]
+    if data.get("final_output"):
+        notes = []
+        for item in data["final_output"]:
+            # Provide defaults so legacy sessions don't crash
+            item.setdefault("exact_transcript", "")
+            item.setdefault("ai_insight", "")
+            item.setdefault("timestamp_start", 0.0)
+            item.setdefault("timestamp_end", 0.0)
+            item.setdefault("spoken_notes", "")
+            notes.append(AlignedNote(**item))
+        data["final_output"] = notes
             
     return data

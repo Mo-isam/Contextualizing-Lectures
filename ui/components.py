@@ -5,6 +5,7 @@ Reusable Streamlit UI components for rendering notes, PDF viewers, and audio pla
 """
 import os
 import streamlit as st
+from core.models import AlignedNote
 
 def seconds_to_hms(s: float) -> str:
     """Convert raw seconds to H:MM:SS or M:SS string."""
@@ -96,17 +97,17 @@ def render_pdf_viewer_images(temp_dir: str):
     )
 
 
-def render_note_card(note: dict, idx: int):
+def render_note_card(note: AlignedNote, idx: int):
     """Render a single note card. Handles both legacy and exact_transcript architectures."""
-    slide_num = note.get("slide_number", "?")
-    title     = note.get("slide_title",  "Untitled")
-    t_start   = note.get("timestamp_start", 0)
-    t_end     = note.get("timestamp_end",   0)
+    slide_num = note.slide_number
+    title     = note.slide_title
+    t_start   = note.timestamp_start
+    t_end     = note.timestamp_end
     ts_label  = f"⏱ {seconds_to_hms(t_start)} → {seconds_to_hms(t_end)}"
 
-    exact_transcript = note.get("exact_transcript", "")
-    legacy_notes     = note.get("spoken_notes", "")
-    ai_insight       = note.get("ai_insight", "")
+    exact_transcript = note.exact_transcript
+    legacy_notes     = note.spoken_notes
+    ai_insight       = note.ai_insight
 
     if legacy_notes and not exact_transcript:
         body_html = f'<div class="note-body">{legacy_notes}</div>'
