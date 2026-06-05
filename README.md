@@ -4,7 +4,9 @@ An AI-powered pipeline that bridges static PDF slides with dynamic verbal insigh
 
 ## 🏗️ Architecture
 
-This project follows a strict modular architecture to separate the user interface from the backend processing and LLM network logic.
+This project follows a strict modular architecture separating the user interface from backend processing. Key intelligent features include:
+* **Variable Semantic Chunking:** Audio is sliced dynamically based on natural pauses and sentence boundaries, ensuring the LLM never loses context mid-thought.
+* **Proactive API Pacing:** Instead of reactive blocking, the pipeline calculates exact target RPMs and injects micro-sleeps only when necessary, maximizing throughput.
 
 ```text
 .
@@ -13,9 +15,9 @@ This project follows a strict modular architecture to separate the user interfac
 ├── ui/                   # Frontend layout, CSS, JS, and Streamlit widgets
 ├── core/                 # Pure backend logic (No Streamlit allowed here)
 │   ├── models.py         # Strict Dataclass blueprints (Slide, TranscriptSegment)
-│   ├── llm_service.py    # Centralized Gemini API rate-limiting & retry engine
-│   ├── storage.py        # Local JSON session saving/loading
-│   └── ...processors.py  # Audio, PDF, and Alignment logic
+│   ├── llm_service.py    # Proactive API pacing and retry engine
+│   ├── storage.py        # Atomic local JSON session saving/loading
+│   └── ...processors.py  # Audio, PDF, and Semantic Alignment logic
 └── data_storage/         # Ephemeral local storage for files and sessions
 ```
 
@@ -34,3 +36,4 @@ This project follows a strict modular architecture to separate the user interfac
 
 3. **Get an API Key:** 
    You will need a free Google Gemini API key from [Google AI Studio](https://aistudio.google.com/) to run the semantic alignment.
+

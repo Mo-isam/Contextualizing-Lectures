@@ -2,8 +2,8 @@
 llm_service.py
 --------------
 Centralized service for handling all Gemini API interactions.
-Manages rate limiting (429 parsing), safety filter exceptions, 
-model hot-swapping, and retry loops.
+Manages proactive RPM pacing, fallback rate limiting (429 parsing), 
+safety filter exceptions, model hot-swapping, and retry loops.
 """
 import re
 import time

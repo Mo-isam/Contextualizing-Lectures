@@ -4,17 +4,13 @@ ai_aligner.py
 Maps Whisper transcript segments to PDF slides using the Gemini API.
 
 Key design decisions:
-  • CHUNKING  — the full transcript is split into 3-5 minute chunks before
-    being sent to Gemini, so each API call stays well within the context-
-    window and token-rate limits.
-  • BATCHING  — a configurable sleep() is inserted between API calls to
-    respect Gemini Flash's per-minute request quota.
-  • SMART 429 HANDLING — when a 429 is received, the code parses the
-    retry_delay field from the error message and sleeps exactly that long
-    (+ a small buffer), rather than using a fixed backoff that may be too
-    short or unnecessarily long.
-  • MERGING   — results from every chunk are merged into a single, sorted
-    FINAL OUTPUT JSON.
+  • VARIABLE SEMANTIC CHUNKING — rather than rigid math, the transcript is 
+    sliced dynamically based on natural pauses (silences > 1.5s) and strong 
+    punctuation. This ensures the LLM receives complete thoughts.
+  • SEQUENTIAL BIAS — the prompt explicitly directs the LLM to follow the 
+    chronological flow of the lecture, reducing hallucinated segment jumps.
+  • MERGING — results from every chunk are merged into a single, sorted
+    FINAL OUTPUT JSON representing the exact transcript to slide alignment.
 """
 
 import os
