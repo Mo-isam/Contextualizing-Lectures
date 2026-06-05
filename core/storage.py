@@ -123,15 +123,7 @@ def load_session(filename: str) -> dict:
     if data.get("slides"):
         data["slides"] = [Slide(**item) for item in data["slides"]]
     if data.get("final_output"):
-        notes = []
-        for item in data["final_output"]:
-            # Provide defaults so legacy sessions don't crash
-            item.setdefault("exact_transcript", "")
-            item.setdefault("ai_insight", "")
-            item.setdefault("timestamp_start", 0.0)
-            item.setdefault("timestamp_end", 0.0)
-            item.setdefault("spoken_notes", "")
-            notes.append(AlignedNote(**item))
-        data["final_output"] = notes
+        # Relies on strict kwargs matching; will correctly throw TypeError if an old session is loaded
+        data["final_output"] = [AlignedNote(**item) for item in data["final_output"]]
             
     return data

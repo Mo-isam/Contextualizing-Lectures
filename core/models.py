@@ -32,6 +32,3 @@ class AlignedNote:
     ai_insight: str
     timestamp_start: float
     timestamp_end: float
-    
-    # Optional fallback for older saved JSON sessions
-    spoken_notes: str = ""

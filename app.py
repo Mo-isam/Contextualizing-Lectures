@@ -328,28 +328,6 @@ with st.sidebar:
                         st.session_state.media_path = data.get("media_path")
                         st.session_state.audio_path = data.get("audio_path")
 
-                        # --- UPGRADE LEGACY SESSIONS PERMANENTLY ---
-                        if not st.session_state.audio_path or not os.path.exists(st.session_state.audio_path):
-                            if st.session_state.media_path and st.session_state.media_path.endswith(".mp4"):
-                                with st.spinner("⏳ Upgrading Legacy Session: Extracting audio permanently..."):
-                                    from core.audio_processor import extract_audio_from_video
-                                    
-                                    base_name = os.path.splitext(os.path.basename(st.session_state.media_path))[0]
-                                    perm_audio_path = os.path.join(FILES_DIR, f"{base_name}_audio.wav")
-                                    
-                                    if not os.path.exists(perm_audio_path):
-                                        extract_audio_from_video(st.session_state.media_path, FILES_DIR)
-                                    
-                                    st.session_state.audio_path = perm_audio_path
-                                    
-                                    # Update the JSON so it never has to do this again
-                                    data["audio_path"] = f"files/{os.path.basename(perm_audio_path)}"
-                                    full_json_path = os.path.join(SESSIONS_DIR, selected_session_file)
-                                    with open(full_json_path, "w", encoding="utf-8") as f:
-                                        json.dump(data, f, ensure_ascii=False, indent=2)
-                            else:
-                                st.session_state.audio_path = st.session_state.media_path
-
                         st.session_state.slide_images = None  # regenerate on-the-fly
                         st.session_state.active_slide = 1
                         st.success("🎉 Lecture reloaded successfully!")
@@ -597,9 +575,9 @@ if st.session_state.final_output:
         if search_q.strip():
             q = search_q.strip().lower()
             filtered = [n for n in filtered
-                        if q in n.spoken_notes.lower()
-                        or q in n.slide_title.lower()
-                        or q in n.exact_transcript.lower()]
+                        if q in n.slide_title.lower()
+                        or q in n.exact_transcript.lower()
+                        or q in n.ai_insight.lower()]
 
         # Render note cards
         st.markdown('<div class="notes-panel">', unsafe_allow_html=True)

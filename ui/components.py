@@ -98,7 +98,7 @@ def render_pdf_viewer_images(temp_dir: str):
 
 
 def render_note_card(note: AlignedNote, idx: int):
-    """Render a single note card. Handles both legacy and exact_transcript architectures."""
+    """Render a single note card."""
     slide_num = note.slide_number
     title     = note.slide_title
     t_start   = note.timestamp_start
@@ -106,15 +106,11 @@ def render_note_card(note: AlignedNote, idx: int):
     ts_label  = f"⏱ {seconds_to_hms(t_start)} → {seconds_to_hms(t_end)}"
 
     exact_transcript = note.exact_transcript
-    legacy_notes     = note.spoken_notes
     ai_insight       = note.ai_insight
 
-    if legacy_notes and not exact_transcript:
-        body_html = f'<div class="note-body">{legacy_notes}</div>'
-    else:
-        body_html = f'<div class="note-body" style="font-style: italic; border-left: 2px solid #64b0ff; padding-left: 10px; margin-bottom: 12px; color: #c9d1d9;">"{exact_transcript}"</div>'
-        if ai_insight:
-            body_html += f'<div style="font-size: 0.8rem; color: #a8c4f0; background: rgba(100,176,255,0.08); padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; border: 1px solid rgba(100,176,255,0.15);">💡 <b>AI Insight:</b> {ai_insight}</div>'
+    body_html = f'<div class="note-body" style="font-style: italic; border-left: 2px solid #64b0ff; padding-left: 10px; margin-bottom: 12px; color: #c9d1d9;">"{exact_transcript}"</div>'
+    if ai_insight:
+        body_html += f'<div style="font-size: 0.8rem; color: #a8c4f0; background: rgba(100,176,255,0.08); padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; border: 1px solid rgba(100,176,255,0.15);">💡 <b>AI Insight:</b> {ai_insight}</div>'
 
     card_html = f"""
     <div class="note-card" id="note-card-{idx}">
