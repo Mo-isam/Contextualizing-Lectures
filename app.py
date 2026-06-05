@@ -89,7 +89,10 @@ def cleanup_temp_dir():
     """Remove the entire temp directory on session reset."""
     temp_dir = st.session_state.get("temp_dir")
     if temp_dir and os.path.exists(temp_dir):
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        try:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        except (PermissionError, OSError):
+            pass # Windows occasionally holds active locks on media/pdf files
         del st.session_state["temp_dir"]
 
 def render_upload_ui() -> tuple:

@@ -8,9 +8,12 @@ import os
 import json
 import time
 import shutil
+import logging
 from dataclasses import asdict
 
 from core.models import TranscriptSegment, Slide, AlignedNote
+
+logger = logging.getLogger(__name__)
 
 # Move up one directory from /core to reach the root project folder
 ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -76,8 +79,12 @@ def save_session(session_name: str, state: dict, temp_dir: str = None) -> str:
     }
 
     session_file = os.path.join(SESSIONS_DIR, f"{session_id}.json")
-    with open(session_file, "w", encoding="utf-8") as f:
+    tmp_file = f"{session_file}.tmp"
+    
+    # Atomic write: write to temp file first, then replace
+    with open(tmp_file, "w", encoding="utf-8") as f:
         json.dump(metadata, f, ensure_ascii=False, indent=2)
+    os.replace(tmp_file, session_file)
 
     return session_file
 
@@ -99,8 +106,8 @@ def list_saved_sessions() -> list[dict]:
                         "filename": f,
                         "timestamp": data.get("timestamp", 0)
                     })
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Failed to read session file {f}: {e}")
     sessions.sort(key=lambda x: x["timestamp"], reverse=True)
     return sessions
 

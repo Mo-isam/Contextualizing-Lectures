@@ -12,6 +12,7 @@ import json
 import subprocess
 import time
 import logging
+import shutil
 
 from core.llm_service import generate_content_with_fallback, SafetyFilterError, AllModelsFailedError
 from core.models import TranscriptSegment
@@ -65,6 +66,9 @@ def extract_audio_from_video(video_path: str, output_dir: str) -> str:
     #   -ar 16000     : resample to 16 kHz
     #   -ac 1         : downmix to mono
     #   -y            : overwrite output without prompting
+    if not shutil.which("ffmpeg"):
+        raise RuntimeError("FFmpeg executable not found. Please install FFmpeg and ensure it is on your system PATH.")
+
     cmd = [
         "ffmpeg",
         "-i", video_path,
@@ -81,7 +85,7 @@ def extract_audio_from_video(video_path: str, output_dir: str) -> str:
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=300,   # 5-minute hard limit
+            timeout=3600,   # 60-minute hard limit for massive lectures
         )
         if result.returncode != 0:
             err = result.stderr.decode("utf-8", errors="replace")
