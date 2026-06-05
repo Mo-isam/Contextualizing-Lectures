@@ -237,10 +237,6 @@ def extract_slide_text_ai(image_paths: list[str], api_key: str, models_to_try: l
             if progress_cb: progress_cb(i / total_images, msg)
             chunk_success = False
             
-        # Free API tier rate limit protection between batches
-        if chunk_success and (i + BATCH_SIZE < total_images):
-            time.sleep(15)
-            
     # Ensure correct page numbering and sorting
     all_slides.sort(key=lambda x: x.page_number)
     return all_slides

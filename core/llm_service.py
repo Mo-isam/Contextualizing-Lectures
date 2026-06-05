@@ -29,6 +29,34 @@ class AllModelsFailedError(Exception):
     pass
 
 
+# ── Global State for Proactive Rate Limiting ─────────────────────────────────
+_last_api_call_time = 0.0
+
+# Free tier limits (can be adjusted for paid tiers)
+MODEL_RPM_LIMITS = {
+    "gemini-3.1-flash-lite": 30,
+    "gemini-2.5-flash-lite": 30,
+    "default": 15
+}
+
+def _apply_proactive_pacing(model_id: str, progress_cb, progress_idx: float):
+    """Pace requests perfectly to avoid hitting 429 errors entirely."""
+    global _last_api_call_time
+    
+    rpm = MODEL_RPM_LIMITS.get(model_id, MODEL_RPM_LIMITS["default"])
+    required_interval = 60.0 / rpm
+    
+    elapsed = time.time() - _last_api_call_time
+    sleep_time = required_interval - elapsed
+    
+    if sleep_time > 0:
+        if progress_cb and sleep_time > 1.0:
+            progress_cb(progress_idx, f"⏳ Pacing API to maintain {rpm} RPM ({sleep_time:.1f}s)...")
+        time.sleep(sleep_time)
+        
+    _last_api_call_time = time.time()
+
+
 # ── Helper Functions ───────────────────────────────────────────────────────────
 
 def extract_retry_delay(exc_str: str, buffer_sec: int = 5) -> int:
@@ -80,6 +108,8 @@ def generate_content_with_fallback(
         model = genai.GenerativeModel(model_id)
         
         for attempt in range(1, max_retries + 1):
+            _apply_proactive_pacing(model_id, progress_cb, progress_idx)
+            
             try:
                 response = model.generate_content(contents, generation_config=generation_config)
                 # Accessing .text triggers the parsing; if blocked, it throws an exception here

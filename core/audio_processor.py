@@ -264,9 +264,6 @@ def transcribe_audio_ai(audio_path: str, temp_dir: str, api_key: str, models_to_
         finally:
             genai.delete_file(gemini_file.name) # Clean up cloud storage regardless of success
 
-        if chunk_success and i < total_chunks - 1:
-            time.sleep(15)
-
     return all_segments
 
 

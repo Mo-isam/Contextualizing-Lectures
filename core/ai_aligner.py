@@ -38,7 +38,6 @@ except ImportError:
 # ── Configuration ──────────────────────────────────────────────────────────────
 MIN_CHUNK_DURATION_SEC = 180      # 3-minute minimum accumulation
 MAX_CHUNK_DURATION_SEC = 300      # 5-minute absolute maximum limit
-INTER_CHUNK_SLEEP_SEC  = 20       # seconds to wait between API calls (Removed in Phase 4)
 
 GEMINI_MODEL_PRIORITY = [
     "gemini-3.5-flash",
@@ -348,21 +347,6 @@ def align_transcript_to_slides(
             msg = f"⚠️ Failed to parse output for {chunk_label}: {str(e)}"
             logger.error(msg)
             if progress_cb: progress_cb(idx / total, msg)
-
-        # ── Rate-limit throttle between chunks ────────────────────────────────
-        # This inter-chunk sleep is the primary defense against per-minute
-        # quota limits. Even if a single call succeeds, waiting INTER_CHUNK_SLEEP_SEC
-        # before the next call keeps us well within the RPM limit.
-        if idx < total - 1:
-            if progress_cb:
-                for sec in range(INTER_CHUNK_SLEEP_SEC, 0, -1):
-                    progress_cb(
-                        (idx + 1) / total,
-                        f"⏳ Waiting {sec}s before next chunk to respect API limits…"
-                    )
-                    time.sleep(1)
-            else:
-                time.sleep(INTER_CHUNK_SLEEP_SEC)
 
     # ── Merge & sort by timestamp ──────────────────────────────────────────────
     all_results.sort(key=lambda x: x.timestamp_start)
