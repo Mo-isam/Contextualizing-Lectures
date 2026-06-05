@@ -36,8 +36,9 @@ except ImportError:
 
 
 # ── Configuration ──────────────────────────────────────────────────────────────
-CHUNK_DURATION_SECONDS = 240      # 4-minute chunks  (tune: 180–300)
-INTER_CHUNK_SLEEP_SEC  = 20       # seconds to wait between Gemini API calls
+MIN_CHUNK_DURATION_SEC = 180      # 3-minute minimum accumulation
+MAX_CHUNK_DURATION_SEC = 300      # 5-minute absolute maximum limit
+INTER_CHUNK_SLEEP_SEC  = 20       # seconds to wait between API calls (Removed in Phase 4)
 
 GEMINI_MODEL_PRIORITY = [
     "gemini-3.5-flash",
@@ -52,27 +53,56 @@ GEMINI_MODEL_PRIORITY = [
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-def _chunk_segments(segments: list[TranscriptSegment], chunk_duration: int) -> list[list[TranscriptSegment]]:
+def _chunk_segments(segments: list[TranscriptSegment]) -> list[list[TranscriptSegment]]:
     """
-    Group Whisper segments into time-based chunks of ~chunk_duration seconds.
-    A segment is never split — it belongs entirely to one chunk.
+    Group Whisper segments into semantic chunks based on natural conversational pauses.
+    Accumulates at least MIN_CHUNK_DURATION_SEC, then looks for a safe cut point 
+    (silence > 1.5s or strong punctuation) up to MAX_CHUNK_DURATION_SEC.
     """
-    chunks        = []
+    chunks = []
     current_chunk = []
-    chunk_start   = 0.0
+    chunk_start = 0.0
 
-    for seg in segments:
-        if current_chunk and (seg.start - chunk_start) >= chunk_duration:
+    for i, seg in enumerate(segments):
+        if not current_chunk:
+            chunk_start = seg.start
+            
+        current_chunk.append(seg)
+        duration = seg.end - chunk_start
+        
+        # 1. If we haven't hit the minimum duration, keep accumulating
+        if duration < MIN_CHUNK_DURATION_SEC:
+            continue
+            
+        # 2. If we hit the absolute maximum, force a cut to protect context limits
+        if duration >= MAX_CHUNK_DURATION_SEC:
             chunks.append(current_chunk)
             current_chunk = []
-            chunk_start   = seg.start
-        current_chunk.append(seg)
+            continue
+            
+        # 3. We are in the "sweet spot" (MIN < duration < MAX). Look for a semantic break.
+        is_semantic_break = False
+        
+        # Condition A: Punctuation break (end of a complete thought)
+        if seg.text.strip().endswith((".", "?", "!")):
+            is_semantic_break = True
+            
+        # Condition B: Silence break (professor paused to change slide, breathe, etc.)
+        if i + 1 < len(segments):
+            next_seg = segments[i+1]
+            if (next_seg.start - seg.end) > 1.5:
+                is_semantic_break = True
+        else:
+            is_semantic_break = True # Always break on the final segment
+            
+        if is_semantic_break:
+            chunks.append(current_chunk)
+            current_chunk = []
 
     if current_chunk:
         chunks.append(current_chunk)
 
     return chunks
-
 
 def _format_chunk_for_prompt(chunk: list[TranscriptSegment]) -> str:
     lines = []
@@ -100,9 +130,10 @@ Your job is to MAP the spoken Segment IDs to the most relevant slide number.
 
 ## ALIGNMENT RULES (CRITICAL)
 1. **Rigorous Text Matching**: Carefully compare the transcript text with each slide's content to find matches.
-2. **Segment Mapping**: Return a list of all Segment IDs that belong to a specific slide.
-3. **General Fallback**: If a segment does not match any slide (e.g., greetings, admin, off-topic), map it to slide_number 0.
-4. **AI Insight**: If the professor explains something vital that is NOT written on the slide, summarize it in `ai_insight` (1-2 sentences). Otherwise, leave it as an empty string.
+2. **Sequential Progression**: Assume the lecture progresses chronologically. Segment IDs should generally move forward alongside slide numbers. Only map non-sequential IDs if the speaker explicitly refers back to a previous topic.
+3. **Segment Mapping**: Return a list of all Segment IDs that belong to a specific slide.
+4. **General Fallback**: If a segment does not match any slide (e.g., greetings, admin, off-topic), map it to slide_number 0.
+5. **AI Insight**: If the professor explains something vital that is NOT written on the slide, summarize it in `ai_insight` (1-2 sentences). Otherwise, leave it as an empty string.
 
 ## SLIDE TEXT ARRAY
 {slides_text}
@@ -243,7 +274,7 @@ def align_transcript_to_slides(
     slide_dict[0] = "General / Off-topic"
 
     # ── Split transcript into chunks ──────────────────────────────────────────
-    chunks = _chunk_segments(segments, CHUNK_DURATION_SECONDS)
+    chunks = _chunk_segments(segments)
     total  = len(chunks)
 
     if progress_cb:
