@@ -211,7 +211,7 @@ def discover_available_models(api_key: str) -> list[str]:
         return available
     except Exception as e:
         # Avoid crashing Streamlit; just log/return empty so fallback handles it
-        print(f"Error listing models: {e}")
+        logger.error(f"Error discovering Gemini models: {e}")
         return []
 
 

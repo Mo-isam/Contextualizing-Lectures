@@ -118,14 +118,20 @@ def render_pdf_to_images(pdf_path: str, output_dir: str) -> list[str]:
     zoom = 2.0
     mat = fitz.Matrix(zoom, zoom)
     
-    for page_idx in range(len(doc)):
-        page = doc[page_idx]
-        pix = page.get_pixmap(matrix=mat)
-        img_path = os.path.join(output_dir, f"slide_{page_idx + 1}.png")
-        pix.save(img_path)
-        image_paths.append(img_path)
+    try:
+        for page_idx in range(len(doc)):
+            page = doc[page_idx]
+            pix = page.get_pixmap(matrix=mat)
+            img_path = os.path.join(output_dir, f"slide_{page_idx + 1}.png")
+            pix.save(img_path)
+            image_paths.append(img_path)
+            
+            # Explicitly free PyMuPDF C-level allocations to prevent memory leaks
+            pix = None
+            page = None
+    finally:
+        doc.close()
         
-    doc.close()
     return image_paths
 
 
@@ -143,7 +149,8 @@ def get_pdf_info(pdf_path: str) -> dict:
         }
         doc.close()
         return info
-    except Exception:
+    except Exception as e:
+        logger.error(f"Failed to read PDF info for '{pdf_path}': {e}")
         return {"page_count": 0, "title": "Unknown", "author": "Unknown"}
 
 
