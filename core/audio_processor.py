@@ -104,7 +104,7 @@ def extract_audio_from_video(video_path: str, output_dir: str) -> str:
 
 # ── 2. Whisper Transcription ───────────────────────────────────────────────────
 
-def transcribe_audio(audio_path: str) -> list[TranscriptSegment]:
+def transcribe_audio(audio_path: str, progress_cb=None) -> list[TranscriptSegment]:
     """
     Transcribe an audio file with the local OpenAI Whisper model.
 
@@ -133,8 +133,12 @@ def transcribe_audio(audio_path: str) -> list[TranscriptSegment]:
 
     global _whisper_model_cache
     if _whisper_model_cache is None:
-        # Load the Whisper model into memory once per application lifecycle
+        # Load the Whisper model into memory once per application lifecycle.
+        # If it's not downloaded yet, Whisper will download it automatically here.
+        if progress_cb: progress_cb(0.1, f"📥 Loading/Downloading Whisper '{WHISPER_MODEL_SIZE}' model (this may take a moment)...")
         _whisper_model_cache = whisper.load_model(WHISPER_MODEL_SIZE)
+
+    if progress_cb: progress_cb(0.3, "🎙️ Whisper model active. Transcribing audio...")
 
     # transcribe() returns a dict with a "segments" key.
     result = _whisper_model_cache.transcribe(
@@ -293,7 +297,7 @@ def process_media_file(media_path: str, temp_dir: str, engine: str = "local", ap
         if not api_key: raise ValueError("API Key required for AI Transcription.")
         segments = transcribe_audio_ai(audio_path, temp_dir, api_key, models_to_try, is_paid, progress_cb)
     else:
-        if progress_cb: progress_cb(0.5, "🎙️ Transcribing locally with Whisper...")
-        segments = transcribe_audio(audio_path)
+        if progress_cb: progress_cb(0.05, "🎙️ Preparing local Whisper transcription...")
+        segments = transcribe_audio(audio_path, progress_cb)
 
     return segments
