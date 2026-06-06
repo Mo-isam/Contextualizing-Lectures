@@ -131,7 +131,11 @@ def generate_content_with_fallback(
             try:
                 response = model.generate_content(contents, generation_config=generation_config)
                 # Accessing .text triggers the parsing; if blocked, it throws an exception here
-                return response.text
+                raw_text = response.text.strip()
+                # Defensively strip Markdown code blocks that Gemini sometimes wraps JSON in
+                clean_text = re.sub(r"^```(?:json)?\n?", "", raw_text, flags=re.IGNORECASE)
+                clean_text = re.sub(r"\n?```$", "", clean_text)
+                return clean_text.strip()
 
             except Exception as exc:
                 exc_str = str(exc)
