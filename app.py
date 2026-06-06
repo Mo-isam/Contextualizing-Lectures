@@ -27,7 +27,8 @@ import tempfile
 from core.file_utils      import save_file, convert_pptx_to_pdf, SUPPORTED_MEDIA_EXT
 from core.audio_processor import process_media_file
 from core.pdf_processor   import extract_slide_text, get_pdf_info, render_pdf_to_images, extract_slide_text_ai
-from core.ai_aligner      import align_transcript_to_slides, discover_available_models, GEMINI_MODEL_PRIORITY
+from core.ai_aligner      import align_transcript_to_slides
+from core.llm_service     import discover_available_models, GEMINI_MODEL_PRIORITY
 
 # ── Local Storage Modules ──────────────────────────────────────────────────────
 from core.models import LectureSession

@@ -18,6 +18,38 @@ except ImportError:
     GENAI_AVAILABLE = False
 
 
+# ── Configuration & Discovery ──────────────────────────────────────────────────
+GEMINI_MODEL_PRIORITY = [
+    "gemini-3.5-flash",
+    "gemini-3.1-flash-lite",
+    "gemini-3-flash-preview",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemma-4-31b-it",
+    "gemma-4-26b-a4b-it",
+]
+
+def discover_available_models(api_key: str) -> list[str]:
+    """Dynamically discover all models available for the provided API key."""
+    if not GENAI_AVAILABLE:
+        return []
+    if not api_key or not api_key.strip():
+        return []
+    try:
+        genai.configure(api_key=api_key.strip())
+        available = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                name = m.name
+                if name.startswith("models/"):
+                    name = name[7:]
+                available.append(name)
+        return available
+    except Exception as e:
+        logger.error(f"Error discovering Gemini models: {e}")
+        return []
+
+
 # ── Custom Exceptions ──────────────────────────────────────────────────────────
 
 class SafetyFilterError(Exception):

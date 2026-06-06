@@ -19,7 +19,7 @@ import time
 import re
 import logging
 
-from core.llm_service import generate_content_with_fallback, SafetyFilterError, AllModelsFailedError
+from core.llm_service import generate_content_with_fallback, SafetyFilterError, AllModelsFailedError, discover_available_models, GEMINI_MODEL_PRIORITY
 from core.models import TranscriptSegment, Slide, AlignedNote
 
 logger = logging.getLogger(__name__)
@@ -34,16 +34,6 @@ except ImportError:
 # ── Configuration ──────────────────────────────────────────────────────────────
 MIN_CHUNK_DURATION_SEC = 180      # 3-minute minimum accumulation
 MAX_CHUNK_DURATION_SEC = 300      # 5-minute absolute maximum limit
-
-GEMINI_MODEL_PRIORITY = [
-    "gemini-3.5-flash",
-    "gemini-3.1-flash-lite",
-    "gemini-3-flash-preview",
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-    "gemma-4-31b-it",
-    "gemma-4-26b-a4b-it",
-]
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -189,33 +179,6 @@ def _process_structured_response(response_text: str, segment_dict: dict[int, Tra
             ))
             
     return final_notes
-
-
-def discover_available_models(api_key: str) -> list[str]:
-    """
-    Dynamically discover all models available for the provided API key
-    that support 'generateContent'.
-    Returns a list of model names (e.g. ['gemini-1.5-flash', 'gemini-1.5-pro', ...])
-    without the 'models/' prefix.
-    """
-    if not GENAI_AVAILABLE:
-        return []
-    if not api_key or not api_key.strip():
-        return []
-    try:
-        genai.configure(api_key=api_key.strip())
-        available = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                name = m.name
-                if name.startswith("models/"):
-                    name = name[7:]  # Strip 'models/' prefix
-                available.append(name)
-        return available
-    except Exception as e:
-        # Avoid crashing Streamlit; just log/return empty so fallback handles it
-        logger.error(f"Error discovering Gemini models: {e}")
-        return []
 
 
 # ── Main Alignment Function ────────────────────────────────────────────────────
