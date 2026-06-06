@@ -37,6 +37,9 @@ except ImportError:
 WHISPER_MODEL_SIZE = "base"   # Change to "small" / "medium" for better accuracy
 AUDIO_SAMPLE_RATE  = 16000    # Whisper expects 16 kHz mono
 
+# Global cache to prevent VRAM thrashing and slow re-loads on repeat runs
+_whisper_model_cache = None
+
 
 # ── 1. Audio Extraction ────────────────────────────────────────────────────────
 
@@ -128,11 +131,13 @@ def transcribe_audio(audio_path: str) -> list[TranscriptSegment]:
     if not os.path.exists(audio_path):
         raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
-    # Load the Whisper model (cached by Whisper internally after first load).
-    model = whisper.load_model(WHISPER_MODEL_SIZE)
+    global _whisper_model_cache
+    if _whisper_model_cache is None:
+        # Load the Whisper model into memory once per application lifecycle
+        _whisper_model_cache = whisper.load_model(WHISPER_MODEL_SIZE)
 
     # transcribe() returns a dict with a "segments" key.
-    result = model.transcribe(
+    result = _whisper_model_cache.transcribe(
         audio_path,
         verbose=False,
         # word_timestamps=True can be enabled for finer granularity.
@@ -213,7 +218,10 @@ def transcribe_audio_ai(audio_path: str, temp_dir: str, api_key: str, models_to_
         gemini_file = genai.upload_file(c_path)
         
         # Wait for API processing (audio needs a few seconds to be "ACTIVE")
+        wait_start = time.time()
         while gemini_file.state.name == "PROCESSING":
+            if time.time() - wait_start > 300:
+                raise TimeoutError(f"Gemini API timed out processing audio chunk {i+1} after 5 minutes.")
             time.sleep(2)
             gemini_file = genai.get_file(gemini_file.name)
             

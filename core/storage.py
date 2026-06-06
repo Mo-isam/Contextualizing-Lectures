@@ -9,6 +9,7 @@ import json
 import time
 import shutil
 import logging
+import uuid
 from dataclasses import asdict
 
 from core.models import TranscriptSegment, Slide, AlignedNote
@@ -28,7 +29,8 @@ def save_session(session_name: str, state: dict, temp_dir: str = None) -> str:
     os.makedirs(FILES_DIR, exist_ok=True)
 
     slug = "".join([c if c.isalnum() or c in ("-", "_") else "_" for c in session_name]).strip()
-    session_id = f"{slug}_{int(time.time())}"
+    # Replace low-resolution timestamp with UUID to guarantee no file collisions
+    session_id = f"{slug}_{uuid.uuid4().hex[:8]}"
 
     pdf_path = state.get("pdf_path")
     media_path = state.get("media_path")

@@ -5,8 +5,12 @@ Pure backend file I/O operations.
 Contains no Streamlit dependencies or UI logic.
 """
 import os
+import threading
 
 SUPPORTED_MEDIA_EXT = {".mp4", ".mp3", ".wav"}
+
+# Global lock to prevent COM apartment-thread collisions when multiple PPTX files are converted concurrently.
+_pptx_lock = threading.Lock()
 
 def save_file(file_bytes: bytes, file_name: str, target_dir: str) -> str:
     """
@@ -35,7 +39,8 @@ def convert_pptx_to_pdf(pptx_path: str, pdf_path: str):
 
     comtypes.CoInitialize()
     try:
-        powerpoint = comtypes.client.CreateObject("Powerpoint.Application")
+        with _pptx_lock:
+            powerpoint = comtypes.client.CreateObject("Powerpoint.Application")
         pres = powerpoint.Presentations.Open(abs_pptx, WithWindow=False)
         pres.SaveAs(abs_pdf, 32)
         pres.Close()
