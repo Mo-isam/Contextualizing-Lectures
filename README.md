@@ -5,8 +5,9 @@ An AI-powered pipeline that bridges static PDF slides with dynamic verbal insigh
 ## 🏗️ Architecture
 
 This project follows a strict modular architecture separating the user interface from backend processing. Key intelligent features include:
-* **Variable Semantic Chunking:** Audio is sliced dynamically based on natural pauses and sentence boundaries, ensuring the LLM never loses context mid-thought.
-* **Proactive API Pacing:** Instead of reactive blocking, the pipeline calculates exact target RPMs and injects micro-sleeps only when necessary, maximizing throughput.
+* **Variable Semantic Chunking & Overlapping Context:** Audio is sliced dynamically based on natural pauses. The AI Aligner passes the end of the previous chunk into the next prompt as `<previous_context>`, ensuring the LLM never loses the conversational thread during boundary splits.
+* **Chain-of-Thought Alignment:** The AI uses a strict JSON schema that forces it to explain its reasoning step-by-step *before* mapping IDs, drastically reducing hallucinations.
+* **Per-User Proactive API Pacing:** Instead of reactive blocking, the pipeline calculates exact target RPMs per API key, injecting 1-second UI-yielding micro-sleeps only when necessary. Paid API users can bypass this via the UI.
 
 ```text
 .

@@ -7,7 +7,7 @@ This folder contains the pure backend logic, data transformation, and LLM networ
 All errors, warnings, and progress updates must be emitted using standard Python `logging` or by passing messages to a `progress_cb` (callback) function.
 
 ### 🧩 Key Components
-* **`models.py`**: The strict source of truth for data structures (e.g., `AlignedNote`). We do not support fallback schemas.
-* **`llm_service.py`**: The centralized Gemini API gateway. It utilizes a proactive pacing algorithm (`max(0, interval - elapsed)`) to maintain exact RPMs, completely bypassing 429 errors.
-* **`storage.py`**: Handles writing objects to disk using OS-level atomic writes (`.tmp` to `.json`) to prevent race conditions when the UI reloads.
-* **`ai_aligner.py`**: The semantic mapping engine. It uses a Variable Semantic Chunker to slice transcripts based on actual silences (> 1.5s) and punctuation, preserving complete thoughts for the LLM.
+* **`models.py`**: The strict source of truth for data structures (e.g., `AlignedNote`, `LectureSession`). By enforcing `LectureSession`, we completely decouple the backend from Streamlit's arbitrary session state.
+* **`llm_service.py`**: The centralized Gemini API gateway. It utilizes a per-API-key proactive pacing dictionary to maintain exact RPMs. It supports yielding sleep loops (to keep the UI responsive) and bypass flags for Paid API tiers.
+* **`storage.py`**: Handles writing objects to disk using OS-level atomic writes and `uuid.uuid4()` filenames, mathematically guaranteeing zero file-collision race conditions when the UI reloads rapidly.
+* **`ai_aligner.py`**: The semantic mapping engine. It uses a Variable Semantic Chunker to slice transcripts, and utilizes `<previous_context>` injection alongside Chain-of-Thought JSON Schema generation to achieve highly accurate, non-linear transcript-to-slide mapping.
