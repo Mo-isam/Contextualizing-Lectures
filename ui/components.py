@@ -32,24 +32,15 @@ def render_audio_player():
         st.warning("⚠️ Audio file could not be found. The 'Play at' buttons will not work.")
 
 
-def render_pdf_viewer_images(temp_dir: str):
+def render_pdf_viewer_images():
     """
     Renders high-quality PNG slide images with clean controls.
     Includes Previous, Next, and Page-jump dropdown inputs.
     """
-    if not st.session_state.get("slide_images"):
-        if st.session_state.get("pdf_path"):
-            img_dir = os.path.join(temp_dir, "slide_images")
-            from core.pdf_processor import render_pdf_to_images
-            try:
-                with st.spinner("🎨 Rendering slide images for display..."):
-                    st.session_state.slide_images = render_pdf_to_images(st.session_state.pdf_path, img_dir)
-                    st.session_state.active_slide = 1
-            except Exception as e:
-                st.error(f"⚠️ Could not render PDF to images: {e}")
-                return
-
     images = st.session_state.get("slide_images", [])
+    if not images:
+        st.info("No slide images available.")
+        return
     if not images:
         st.info("No slide images available.")
         return

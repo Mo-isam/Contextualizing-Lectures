@@ -336,7 +336,10 @@ with st.sidebar:
                         st.session_state.slides = session_data.slides
                         st.session_state.final_output = session_data.final_output
 
-                        st.session_state.slide_images = None  # regenerate on-the-fly
+                        with st.spinner("🎨 Rendering slide images for display..."):
+                            temp_dir = get_or_create_temp_dir()
+                            img_dir = os.path.join(temp_dir, "slide_images")
+                            st.session_state.slide_images = render_pdf_to_images(session_data.pdf_path, img_dir)
                         st.session_state.active_slide = 1
                         st.success("🎉 Lecture reloaded successfully!")
                         time.sleep(1)
@@ -562,7 +565,7 @@ if st.session_state.final_output:
         st.markdown('<div class="col-label">📄 Lecture Slides</div>', unsafe_allow_html=True)
         info = get_pdf_info(st.session_state.pdf_path)
         st.caption(f"📑 {info['page_count']} pages · {os.path.basename(st.session_state.pdf_path)}")
-        render_pdf_viewer_images(get_or_create_temp_dir())
+        render_pdf_viewer_images()
 
     # RIGHT — Notes cards (Strict 1-to-1 sync with active slide)
     with col_notes:
