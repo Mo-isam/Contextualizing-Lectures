@@ -30,31 +30,47 @@ class AllModelsFailedError(Exception):
 
 
 # ── Global State for Proactive Rate Limiting ─────────────────────────────────
-_last_api_call_time = 0.0
+# Dictionary to track pacing per individual API key
+_last_call_times = {}
 
-# Free tier limits (can be adjusted for paid tiers)
+# Free tier limits (2026 guidelines)
 MODEL_RPM_LIMITS = {
+    "gemini-3.5-flash": 15,
     "gemini-3.1-flash-lite": 30,
+    "gemini-3-flash-preview": 15,
+    "gemini-2.5-flash": 15,
     "gemini-2.5-flash-lite": 30,
     "default": 15
 }
 
-def _apply_proactive_pacing(model_id: str, progress_cb, progress_idx: float):
+def _apply_proactive_pacing(api_key: str, model_id: str, is_paid: bool, progress_cb, progress_idx: float):
     """Pace requests perfectly to avoid hitting 429 errors entirely."""
-    global _last_api_call_time
+    if is_paid:
+        return
+        
+    global _last_call_times
+    key_hash = hash(api_key)
     
     rpm = MODEL_RPM_LIMITS.get(model_id, MODEL_RPM_LIMITS["default"])
+    if rpm <= 0:
+        return
+        
     required_interval = 60.0 / rpm
-    
-    elapsed = time.time() - _last_api_call_time
+    last_call = _last_call_times.get(key_hash, 0.0)
+    elapsed = time.time() - last_call
     sleep_time = required_interval - elapsed
     
     if sleep_time > 0:
         if progress_cb and sleep_time > 1.0:
-            progress_cb(progress_idx, f"⏳ Pacing API to maintain {rpm} RPM ({sleep_time:.1f}s)...")
-        time.sleep(sleep_time)
+            # Yield to Streamlit UI with 1-second ticks
+            for sec in range(int(sleep_time), 0, -1):
+                progress_cb(progress_idx, f"⏳ Pacing API to maintain {rpm} RPM ({sec}s)...")
+                time.sleep(1)
+            time.sleep(sleep_time - int(sleep_time)) # Sleep remainder
+        else:
+            time.sleep(sleep_time)
         
-    _last_api_call_time = time.time()
+    _last_call_times[key_hash] = time.time()
 
 
 # ── Helper Functions ───────────────────────────────────────────────────────────
@@ -84,6 +100,8 @@ def generate_content_with_fallback(
     contents: list,
     generation_config,
     models_to_try: list[str],
+    api_key: str,
+    is_paid: bool = False,
     log_context: str = "LLM request",
     progress_cb=None,
     progress_idx: float = 0.0,
@@ -108,7 +126,7 @@ def generate_content_with_fallback(
         model = genai.GenerativeModel(model_id)
         
         for attempt in range(1, max_retries + 1):
-            _apply_proactive_pacing(model_id, progress_cb, progress_idx)
+            _apply_proactive_pacing(api_key, model_id, is_paid, progress_cb, progress_idx)
             
             try:
                 response = model.generate_content(contents, generation_config=generation_config)

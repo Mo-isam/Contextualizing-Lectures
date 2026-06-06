@@ -158,7 +158,7 @@ def transcribe_audio(audio_path: str) -> list[TranscriptSegment]:
 
 # ── 3. AI Audio Transcription (Gemini) ─────────────────────────────────────────
 
-def transcribe_audio_ai(audio_path: str, temp_dir: str, api_key: str, models_to_try: list[str], progress_cb=None) -> list[TranscriptSegment]:
+def transcribe_audio_ai(audio_path: str, temp_dir: str, api_key: str, models_to_try: list[str], is_paid: bool = False, progress_cb=None) -> list[TranscriptSegment]:
     """Transcribe audio using Gemini, with hot-swapping for quotas and chunking for token limits."""
     if not GENAI_AVAILABLE:
         raise ImportError("google-generativeai is not installed.")
@@ -232,6 +232,8 @@ def transcribe_audio_ai(audio_path: str, temp_dir: str, api_key: str, models_to_
                 contents=[gemini_file, prompt],
                 generation_config=config,
                 models_to_try=models_to_try,
+                api_key=api_key,
+                is_paid=is_paid,
                 log_context=f"audio chunk {i+1}",
                 progress_cb=progress_cb,
                 progress_idx=i / total_chunks,
@@ -277,7 +279,7 @@ def transcribe_audio_ai(audio_path: str, temp_dir: str, api_key: str, models_to_
 
 # ── 4. Orchestration Helper ────────────────────────────────────────────────────
 
-def process_media_file(media_path: str, temp_dir: str, engine: str = "local", api_key: str = "", models_to_try: list = None, progress_cb=None) -> list[TranscriptSegment]:
+def process_media_file(media_path: str, temp_dir: str, engine: str = "local", api_key: str = "", models_to_try: list = None, is_paid: bool = False, progress_cb=None) -> list[TranscriptSegment]:
     ext = os.path.splitext(media_path)[1].lower()
     audio_dir = os.path.join(temp_dir, "audio")
 
@@ -289,7 +291,7 @@ def process_media_file(media_path: str, temp_dir: str, engine: str = "local", ap
 
     if engine == "ai":
         if not api_key: raise ValueError("API Key required for AI Transcription.")
-        segments = transcribe_audio_ai(audio_path, temp_dir, api_key, models_to_try, progress_cb)
+        segments = transcribe_audio_ai(audio_path, temp_dir, api_key, models_to_try, is_paid, progress_cb)
     else:
         if progress_cb: progress_cb(0.5, "🎙️ Transcribing locally with Whisper...")
         segments = transcribe_audio(audio_path)

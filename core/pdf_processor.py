@@ -154,7 +154,7 @@ def get_pdf_info(pdf_path: str) -> dict:
         return {"page_count": 0, "title": "Unknown", "author": "Unknown"}
 
 
-def extract_slide_text_ai(image_paths: list[str], api_key: str, models_to_try: list[str], progress_cb=None) -> list[Slide]:
+def extract_slide_text_ai(image_paths: list[str], api_key: str, models_to_try: list[str], is_paid: bool = False, progress_cb=None) -> list[Slide]:
     """
     Extract text from slide PNGs using Gemini Vision. 
     Includes multi-model quota hot-swapping and copyright/safety filter bypass.
@@ -211,6 +211,8 @@ def extract_slide_text_ai(image_paths: list[str], api_key: str, models_to_try: l
                 contents=prompt,
                 generation_config=config,
                 models_to_try=models_to_try,
+                api_key=api_key,
+                is_paid=is_paid,
                 log_context=f"slides {start_page}-{end_page}",
                 progress_cb=progress_cb,
                 progress_idx=i / total_images,

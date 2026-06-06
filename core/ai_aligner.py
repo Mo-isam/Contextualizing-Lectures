@@ -218,6 +218,7 @@ def align_transcript_to_slides(
     slides      : list[Slide],
     api_key     : str,
     model_name  : str  = "",          # overrides GEMINI_MODEL_PRIORITY[0] if set
+    is_paid     : bool = False,
     progress_cb         = None,
 ) -> list[dict]:
     """
@@ -322,6 +323,8 @@ def align_transcript_to_slides(
                 contents=prompt,
                 generation_config=gen_config,
                 models_to_try=models_to_try,
+                api_key=api_key,
+                is_paid=is_paid,
                 log_context=chunk_label,
                 progress_cb=progress_cb,
                 progress_idx=idx / total

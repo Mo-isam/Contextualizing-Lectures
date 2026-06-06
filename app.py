@@ -177,6 +177,12 @@ with st.sidebar:
 
     st.divider()
 
+    # ── API Tier ──────────────────────────────────────────────────────────────
+    st.markdown("**💸 API Quota Tier**")
+    is_paid_api = st.checkbox("💎 Paid / Tier-1 API Key (Disable Pacing)", value=False, help="Check this if you have a paid Google AI account to bypass all artificial rate limiting and run at maximum speed.")
+    
+    st.divider()
+
     # ── Model selector ────────────────────────────────────────────────────────
     st.markdown("**🤖 Gemini Model**")
 
@@ -443,7 +449,7 @@ if files_ready and st.session_state.final_output is None:
                 
                 segments = process_media_file(
                     st.session_state.media_path, temp_dir,
-                    engine=engine, api_key=api_key, models_to_try=models_to_try, progress_cb=audio_cb
+                    engine=engine, api_key=api_key, models_to_try=models_to_try, is_paid=is_paid_api, progress_cb=audio_cb
                 )
                 audio_prog.empty() # clean up bar when done
                 st.session_state.transcript_segments = segments
@@ -477,7 +483,7 @@ if files_ready and st.session_state.final_output is None:
                         pdf_prog.progress(min(frac, 1.0))
                         status_box.update(label=msg)
                         
-                    slides = extract_slide_text_ai(st.session_state.slide_images, api_key, models_to_try, slide_cb)
+                    slides = extract_slide_text_ai(st.session_state.slide_images, api_key, models_to_try, is_paid=is_paid_api, progress_cb=slide_cb)
                     pdf_prog.empty()
 
                 st.session_state.slides = slides
@@ -515,6 +521,7 @@ if files_ready and st.session_state.final_output is None:
                 slides      = st.session_state.slides,
                 api_key     = api_key,
                 model_name  = selected_model,   # "" → auto-fallback through priority list
+                is_paid     = is_paid_api,
                 progress_cb = _progress_cb,
             )
             st.session_state.final_output    = final_output
