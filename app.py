@@ -388,8 +388,7 @@ with st.sidebar:
     # ── Reset ─────────────────────────────────────────────────────────────────
     if st.button("🔄 Reset Session", width="stretch"):
         cleanup_temp_dir()
-        for k in list(st.session_state.keys()):
-            del st.session_state[k]
+        st.session_state.clear()
         st.rerun()
 
 
