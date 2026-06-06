@@ -13,6 +13,7 @@ import subprocess
 import time
 import logging
 import shutil
+import threading
 
 from core.llm_service import generate_content_with_fallback, SafetyFilterError, AllModelsFailedError
 from core.models import TranscriptSegment
@@ -39,6 +40,7 @@ AUDIO_SAMPLE_RATE  = 16000    # Whisper expects 16 kHz mono
 
 # Global cache to prevent VRAM thrashing and slow re-loads on repeat runs
 _whisper_model_cache = None
+_whisper_lock = threading.Lock()
 
 
 # ── 1. Audio Extraction ────────────────────────────────────────────────────────
@@ -132,20 +134,21 @@ def transcribe_audio(audio_path: str, progress_cb=None) -> list[TranscriptSegmen
         raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
     global _whisper_model_cache
-    if _whisper_model_cache is None:
-        # Load the Whisper model into memory once per application lifecycle.
-        # If it's not downloaded yet, Whisper will download it automatically here.
-        if progress_cb: progress_cb(0.1, f"📥 Loading/Downloading Whisper '{WHISPER_MODEL_SIZE}' model (this may take a moment)...")
-        _whisper_model_cache = whisper.load_model(WHISPER_MODEL_SIZE)
+    with _whisper_lock:
+        if _whisper_model_cache is None:
+            # Load the Whisper model into memory once per application lifecycle.
+            # If it's not downloaded yet, Whisper will download it automatically here.
+            if progress_cb: progress_cb(0.1, f"📥 Loading/Downloading Whisper '{WHISPER_MODEL_SIZE}' model (this may take a moment)...")
+            _whisper_model_cache = whisper.load_model(WHISPER_MODEL_SIZE)
 
-    if progress_cb: progress_cb(0.3, "🎙️ Whisper model active. Transcribing audio...")
+        if progress_cb: progress_cb(0.3, "🎙️ Whisper model active. Transcribing audio...")
 
-    # transcribe() returns a dict with a "segments" key.
-    result = _whisper_model_cache.transcribe(
-        audio_path,
-        verbose=False,
-        # word_timestamps=True can be enabled for finer granularity.
-    )
+        # transcribe() returns a dict with a "segments" key.
+        result = _whisper_model_cache.transcribe(
+            audio_path,
+            verbose=False,
+            # word_timestamps=True can be enabled for finer granularity.
+        )
 
     # Normalise output — keep only the fields we need.
     segments = []
