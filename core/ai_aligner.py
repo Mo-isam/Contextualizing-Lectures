@@ -280,7 +280,6 @@ def align_transcript_to_slides(
         try:
             response_text = generate_content_with_fallback(
                 contents=prompt,
-                generation_config=gen_config,
                 models_to_try=models_to_try,
                 api_key=api_key,
                 schema=structured_schema,
