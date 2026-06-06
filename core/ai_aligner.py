@@ -112,29 +112,36 @@ def _fmt_seconds(s: float) -> str:
     return f"{m:02d}:{sec:02d}"
 
 
-def _build_prompt(slides_text: str, chunk_transcript: str) -> str:
+def _build_prompt(slides_text: str, chunk_transcript: str, previous_context: str = "") -> str:
+    prev_block = ""
+    if previous_context:
+        prev_block = f"\n<previous_context>\n[Do not map this. Provided for conversational flow only]\n{previous_context}\n</previous_context>\n"
+
     return f"""
 You are an expert academic assistant specializing in lecture analysis and precise semantic alignment.
 
 ## YOUR TASK
 You will receive:
 1. **Slide Text Array** — the text content of every slide in the lecture presentation.
-2. **Transcript Chunk** — a portion of the spoken lecture, where each sentence has a unique [ID: X].
+2. **Transcript Chunk** — a portion of the spoken lecture, where each sentence has a unique [ID: X].{prev_block}
 
-Your job is to MAP the spoken Segment IDs to the most relevant slide number.
+Your job is to MAP the spoken Segment IDs located in the <current_chunk_to_map> to the most relevant slide number.
 
 ## ALIGNMENT RULES (CRITICAL)
 1. **Rigorous Text Matching**: Carefully compare the transcript text with each slide's content to find matches.
-2. **Sequential Progression**: Assume the lecture progresses chronologically. Segment IDs should generally move forward alongside slide numbers. Only map non-sequential IDs if the speaker explicitly refers back to a previous topic.
-3. **Segment Mapping**: Return a list of all Segment IDs that belong to a specific slide.
-4. **General Fallback**: If a segment does not match any slide (e.g., greetings, admin, off-topic), map it to slide_number 0.
-5. **AI Insight**: If the professor explains something vital that is NOT written on the slide, summarize it in `ai_insight` (1-2 sentences). Otherwise, leave it as an empty string.
+2. **Chain of Thought Reasoning**: For each slide mapping, provide a brief `step_by_step_reasoning` explaining why these IDs belong to this slide.
+3. **Sequential Progression**: Assume the lecture progresses chronologically.
+4. **Segment Mapping**: Return a list of all Segment IDs that belong to a specific slide.
+5. **General Fallback**: If a segment does not match any slide (e.g., greetings, admin, off-topic), map it to slide_number 0.
+6. **AI Insight**: If the professor explains something vital that is NOT written on the slide, summarize it in `ai_insight` (1-2 sentences).
 
 ## SLIDE TEXT ARRAY
 {slides_text}
 
 ## TRANSCRIPT CHUNK
+<current_chunk_to_map>
 {chunk_transcript}
+</current_chunk_to_map>
 """.strip()
 
 
@@ -277,6 +284,7 @@ def align_transcript_to_slides(
         progress_cb(0.0, f"Starting alignment — {total} chunk(s) to process…")
 
     all_results: list[AlignedNote] = []
+    previous_context_text = ""
 
     for idx, chunk in enumerate(chunks):
         chunk_start = chunk[0].start
@@ -287,7 +295,12 @@ def align_transcript_to_slides(
             progress_cb(idx / total, f"🤖 Processing {chunk_label}…")
 
         chunk_transcript = _format_chunk_for_prompt(chunk)
-        prompt           = _build_prompt(slides_text, chunk_transcript)
+        prompt           = _build_prompt(slides_text, chunk_transcript, previous_context_text)
+
+        # Extract the last 3 segments for the NEXT chunk's context. 
+        # Note: seg.text does NOT contain the ID, which is exactly what we want.
+        overlap_segs = chunk[-3:] if len(chunk) >= 3 else chunk
+        previous_context_text = " ".join([seg.text for seg in overlap_segs])
 
         # Strict JSON Schema Definition
         structured_schema = {
@@ -298,6 +311,7 @@ def align_transcript_to_slides(
                     "items": {
                         "type": "OBJECT",
                         "properties": {
+                            "step_by_step_reasoning": {"type": "STRING"},
                             "slide_number": {"type": "INTEGER"},
                             "segment_ids": {
                                 "type": "ARRAY",
@@ -305,7 +319,7 @@ def align_transcript_to_slides(
                             },
                             "ai_insight": {"type": "STRING"}
                         },
-                        "required": ["slide_number", "segment_ids", "ai_insight"]
+                        "required": ["step_by_step_reasoning", "slide_number", "segment_ids", "ai_insight"]
                     }
                 }
             },
