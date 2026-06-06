@@ -15,16 +15,10 @@ import logging
 import shutil
 import threading
 
-from core.llm_service import generate_content_with_fallback, SafetyFilterError, AllModelsFailedError
+from core.llm_service import generate_content_with_fallback, SafetyFilterError, AllModelsFailedError, upload_and_wait_for_file, delete_cloud_file
 from core.models import TranscriptSegment
 
 logger = logging.getLogger(__name__)
-
-try:
-    import google.generativeai as genai
-    GENAI_AVAILABLE = True
-except ImportError:
-    GENAI_AVAILABLE = False
 
 # Lazy-import Whisper so the app loads even if torch isn't installed yet.
 try:
@@ -167,9 +161,6 @@ def transcribe_audio(audio_path: str, progress_cb=None) -> list[TranscriptSegmen
 
 def transcribe_audio_ai(audio_path: str, temp_dir: str, api_key: str, models_to_try: list[str], is_paid: bool = False, progress_cb=None) -> list[TranscriptSegment]:
     """Transcribe audio using Gemini, with hot-swapping for quotas and chunking for token limits."""
-    if not GENAI_AVAILABLE:
-        raise ImportError("google-generativeai is not installed.")
-        
     schema = {
         "type": "OBJECT",
         "properties": {
@@ -213,16 +204,8 @@ def transcribe_audio_ai(audio_path: str, temp_dir: str, api_key: str, models_to_
         time_offset = i * 300.0  # 5 minutes per chunk
         if progress_cb: progress_cb(i/total_chunks, f"☁️ Uploading & Transcribing chunk {i+1}/{total_chunks}...")
         
-        # Upload to Gemini
-        gemini_file = genai.upload_file(c_path)
-        
-        # Wait for API processing (audio needs a few seconds to be "ACTIVE")
-        wait_start = time.time()
-        while gemini_file.state.name == "PROCESSING":
-            if time.time() - wait_start > 300:
-                raise TimeoutError(f"Gemini API timed out processing audio chunk {i+1} after 5 minutes.")
-            time.sleep(2)
-            gemini_file = genai.get_file(gemini_file.name)
+        # Upload and wait for cloud processing
+        gemini_file = upload_and_wait_for_file(c_path, api_key)
             
         chunk_success = False
         try:
@@ -272,7 +255,7 @@ def transcribe_audio_ai(audio_path: str, temp_dir: str, api_key: str, models_to_
             chunk_success = False
             
         finally:
-            genai.delete_file(gemini_file.name) # Clean up cloud storage regardless of success
+            delete_cloud_file(gemini_file.name, api_key) # Clean up cloud storage regardless of success
 
     return all_segments
 

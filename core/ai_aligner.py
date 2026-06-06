@@ -24,13 +24,6 @@ from core.models import TranscriptSegment, Slide, AlignedNote
 
 logger = logging.getLogger(__name__)
 
-try:
-    import google.generativeai as genai
-    GENAI_AVAILABLE = True
-except ImportError:
-    GENAI_AVAILABLE = False
-
-
 # ── Configuration ──────────────────────────────────────────────────────────────
 MIN_CHUNK_DURATION_SEC = 180      # 3-minute minimum accumulation
 MAX_CHUNK_DURATION_SEC = 300      # 5-minute absolute maximum limit
@@ -204,9 +197,6 @@ def align_transcript_to_slides(
     Returns:
         FINAL OUTPUT JSON — merged, sorted list of alignment dicts.
     """
-    if not GENAI_AVAILABLE:
-        raise ImportError("google-generativeai is not installed. Run: pip install google-generativeai")
-
     if not api_key or api_key.strip() == "":
         raise ValueError("Gemini API key is missing. Please enter your key in the sidebar.")
 

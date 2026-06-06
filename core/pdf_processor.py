@@ -17,12 +17,6 @@ from core.models import Slide
 
 logger = logging.getLogger(__name__)
 
-try:
-    import google.generativeai as genai
-    GENAI_AVAILABLE = True
-except ImportError:
-    GENAI_AVAILABLE = False
-
 # Silence non-fatal structure warnings (e.g., "No common ancestor in structure tree")
 fitz.TOOLS.mupdf_display_errors(False)
 
@@ -159,9 +153,6 @@ def extract_slide_text_ai(image_paths: list[str], api_key: str, models_to_try: l
     Extract text from slide PNGs using Gemini Vision. 
     Includes multi-model quota hot-swapping and copyright/safety filter bypass.
     """
-    if not GENAI_AVAILABLE:
-        raise ImportError("google-generativeai is not installed.")
-    
     schema = {
         "type": "OBJECT",
         "properties": {

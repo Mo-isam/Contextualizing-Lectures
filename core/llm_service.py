@@ -126,6 +126,33 @@ def is_quota_exhausted(exc_str: str) -> bool:
     return "limit: 0" in exc_str and "GenerateRequestsPerDay" in exc_str
 
 
+# ── Cloud File Management ──────────────────────────────────────────────────────
+
+def upload_and_wait_for_file(file_path: str, api_key: str, timeout: int = 300):
+    """Uploads a file to the GenAI cloud and waits for it to become ACTIVE."""
+    if not GENAI_AVAILABLE:
+        raise ImportError("google-generativeai is not installed.")
+    genai.configure(api_key=api_key.strip())
+    
+    gemini_file = genai.upload_file(file_path)
+    wait_start = time.time()
+    while gemini_file.state.name == "PROCESSING":
+        if time.time() - wait_start > timeout:
+            raise TimeoutError(f"Cloud API timed out processing file after {timeout} seconds.")
+        time.sleep(2)
+        gemini_file = genai.get_file(gemini_file.name)
+    return gemini_file
+
+def delete_cloud_file(file_name: str, api_key: str):
+    """Deletes a file from the GenAI cloud."""
+    if not GENAI_AVAILABLE:
+        return
+    genai.configure(api_key=api_key.strip())
+    try:
+        genai.delete_file(file_name)
+    except Exception as e:
+        logger.warning(f"Failed to delete cloud file {file_name}: {e}")
+
 # ── Core Generation Function ───────────────────────────────────────────────────
 
 def generate_content_with_fallback(
