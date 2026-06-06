@@ -84,7 +84,7 @@ def render_pdf_viewer_images():
     active_img_path = images[active_idx]
     st.image(
         active_img_path,
-        use_container_width=True,
+        width="stretch",
         caption=f"Showing slide {st.session_state.active_slide} of {num_pages}"
     )
 
