@@ -170,8 +170,6 @@ def transcribe_audio_ai(audio_path: str, temp_dir: str, api_key: str, models_to_
     if not GENAI_AVAILABLE:
         raise ImportError("google-generativeai is not installed.")
         
-    genai.configure(api_key=api_key.strip())
-    
     schema = {
         "type": "OBJECT",
         "properties": {
@@ -190,12 +188,6 @@ def transcribe_audio_ai(audio_path: str, temp_dir: str, api_key: str, models_to_
         },
         "required": ["segments"]
     }
-    
-    config = genai.GenerationConfig(
-        temperature=0.0, # Zero creativity, exact transcription
-        response_mime_type="application/json",
-        response_schema=schema
-    )
 
     # 1. Chunk the audio into 5-minute pieces using FFmpeg
     chunk_dir = os.path.join(temp_dir, "audio_chunks")
@@ -237,9 +229,10 @@ def transcribe_audio_ai(audio_path: str, temp_dir: str, api_key: str, models_to_
             prompt = "Transcribe this audio exactly. Do not summarize."
             response_text = generate_content_with_fallback(
                 contents=[gemini_file, prompt],
-                generation_config=config,
                 models_to_try=models_to_try,
                 api_key=api_key,
+                schema=schema,
+                temperature=0.0,
                 is_paid=is_paid,
                 log_context=f"audio chunk {i+1}",
                 progress_cb=progress_cb,

@@ -162,8 +162,6 @@ def extract_slide_text_ai(image_paths: list[str], api_key: str, models_to_try: l
     if not GENAI_AVAILABLE:
         raise ImportError("google-generativeai is not installed.")
     
-    genai.configure(api_key=api_key.strip())
-    
     schema = {
         "type": "OBJECT",
         "properties": {
@@ -182,12 +180,6 @@ def extract_slide_text_ai(image_paths: list[str], api_key: str, models_to_try: l
         },
         "required": ["extracted_slides"]
     }
-    
-    config = genai.GenerationConfig(
-        temperature=0.0,  # Absolute zero creativity required for OCR
-        response_mime_type="application/json",
-        response_schema=schema
-    )
     
     BATCH_SIZE = 5
     all_slides = []
@@ -209,9 +201,10 @@ def extract_slide_text_ai(image_paths: list[str], api_key: str, models_to_try: l
         try:
             response_text = generate_content_with_fallback(
                 contents=prompt,
-                generation_config=config,
                 models_to_try=models_to_try,
                 api_key=api_key,
+                schema=schema,
+                temperature=0.0,
                 is_paid=is_paid,
                 log_context=f"slides {start_page}-{end_page}",
                 progress_cb=progress_cb,

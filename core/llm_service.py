@@ -130,9 +130,10 @@ def is_quota_exhausted(exc_str: str) -> bool:
 
 def generate_content_with_fallback(
     contents: list,
-    generation_config,
     models_to_try: list[str],
     api_key: str,
+    schema: dict = None,
+    temperature: float = 0.0,
     is_paid: bool = False,
     log_context: str = "LLM request",
     progress_cb=None,
@@ -154,6 +155,16 @@ def generate_content_with_fallback(
     if not GENAI_AVAILABLE:
         raise ImportError("google-generativeai is not installed.")
 
+    genai.configure(api_key=api_key.strip())
+    
+    gen_config = None
+    if schema is not None:
+        gen_config = genai.GenerationConfig(
+            temperature=temperature,
+            response_mime_type="application/json",
+            response_schema=schema
+        )
+
     for model_id in models_to_try:
         model = genai.GenerativeModel(model_id)
         
@@ -161,7 +172,7 @@ def generate_content_with_fallback(
             _apply_proactive_pacing(api_key, model_id, is_paid, progress_cb, progress_idx)
             
             try:
-                response = model.generate_content(contents, generation_config=generation_config)
+                response = model.generate_content(contents, generation_config=gen_config)
                 # Accessing .text triggers the parsing; if blocked, it throws an exception here
                 raw_text = response.text.strip()
                 # Defensively strip Markdown code blocks that Gemini sometimes wraps JSON in

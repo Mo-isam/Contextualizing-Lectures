@@ -210,9 +210,6 @@ def align_transcript_to_slides(
     if not api_key or api_key.strip() == "":
         raise ValueError("Gemini API key is missing. Please enter your key in the sidebar.")
 
-    # ── Configure Gemini ───────────────────────────────────────────────────────
-    genai.configure(api_key=api_key.strip())
-
     # Build model priority list: user pick first, then discovered models, then defaults
     models_to_try = [model_name.strip()] if model_name.strip() else []
     
@@ -289,11 +286,6 @@ def align_transcript_to_slides(
             "required": ["alignments"]
         }
         
-        gen_config = genai.GenerationConfig(
-            response_mime_type="application/json",
-            response_schema=structured_schema
-        )
-
         # ── Generate Content via Centralized LLM Service ──────────────────────
         try:
             response_text = generate_content_with_fallback(
@@ -301,6 +293,8 @@ def align_transcript_to_slides(
                 generation_config=gen_config,
                 models_to_try=models_to_try,
                 api_key=api_key,
+                schema=structured_schema,
+                temperature=0.0,
                 is_paid=is_paid,
                 log_context=chunk_label,
                 progress_cb=progress_cb,
