@@ -28,7 +28,7 @@ from core.file_utils      import save_file, convert_pptx_to_pdf, SUPPORTED_MEDIA
 from core.audio_processor import process_media_file
 from core.pdf_processor   import extract_slide_text, get_pdf_info, render_pdf_to_images, extract_slide_text_ai
 from core.ai_aligner      import align_transcript_to_slides
-from core.llm_service     import discover_available_models, GEMINI_MODEL_PRIORITY
+from core.llm_service     import discover_available_models, GEMINI_MODEL_PRIORITY, DEFAULT_MODEL_OPTIONS
 
 # ── Local Storage Modules ──────────────────────────────────────────────────────
 from core.models import LectureSession
@@ -187,10 +187,12 @@ with st.sidebar:
     # ── Model selector ────────────────────────────────────────────────────────
     st.markdown("**🤖 Gemini Model**")
 
-    # Dynamic model discovery
+    # Tier-aware model list building
     discovered_models = []
-    if api_key and api_key.strip():
-        # Cache discovered models in session state so we don't query the API on every single rerun
+    MODEL_OPTIONS = DEFAULT_MODEL_OPTIONS.copy()
+
+    # Only perform dynamic discovery if the user explicitly checks the Paid/Tier-1 box
+    if is_paid_api and api_key and api_key.strip():
         if not st.session_state.discovered_models or st.session_state.get("last_api_key") != api_key.strip():
             with st.spinner("🔍 Discovering available models..."):
                 try:
@@ -202,35 +204,11 @@ with st.sidebar:
                     pass
         discovered_models = st.session_state.discovered_models
 
-    if discovered_models:
-        # Build nice options dynamically based on the 2026 model lineup
-        MODEL_OPTIONS = {"Auto (try all, best quota)": ""}
+        # Append any new discovered models for paid users
         for m in discovered_models:
-            label = m
-            if "3.5-flash" in m:
-                label += " ✦ Latest Generative AI"
-            elif "3.1-flash-lite" in m or "2.5-flash-lite" in m:
-                label += " ✦ Fast & Lightweight"
-            elif "3-flash-preview" in m:
-                label += " ✦ Preview Build"
-            elif "2.5-flash" in m:
-                label += " ✦ Stable Production"
-            elif "gemma" in m:
-                label += " ✦ Open Weights"
-            
-            MODEL_OPTIONS[label] = m
-    else:
-        # Fallback dictionary if API discovery fails
-        MODEL_OPTIONS = {
-            "Auto (try all, best quota)"                : "",
-            "Gemini 3.5 Flash ✦ Latest"                 : "gemini-3.5-flash",
-            "Gemini 3.1 Flash Lite ✦ Fast"              : "gemini-3.1-flash-lite",
-            "Gemini 3.0 Flash Preview"                  : "gemini-3-flash-preview",
-            "Gemini 2.5 Flash ✦ Stable"                 : "gemini-2.5-flash",
-            "Gemini 2.5 Flash Lite"                     : "gemini-2.5-flash-lite",
-            "Gemma 4 (31B) ✦ Open Weights"              : "gemma-4-31b-it",
-            "Gemma 4 (26B A4B) ✦ Optimized"             : "gemma-4-26b-a4b-it",
-        }
+            if m not in MODEL_OPTIONS.values():
+                label = f"{m} ✦ Pro / Paid"
+                MODEL_OPTIONS[label] = m
 
     model_label = st.selectbox(
         "Model",

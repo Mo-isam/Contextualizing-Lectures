@@ -29,6 +29,17 @@ GEMINI_MODEL_PRIORITY = [
     "gemma-4-26b-a4b-it",
 ]
 
+DEFAULT_MODEL_OPTIONS = {
+    "Auto (try all, best quota)"                : "",
+    "Gemini 3.5 Flash ✦ Latest"                 : "gemini-3.5-flash",
+    "Gemini 3.1 Flash Lite ✦ Fast"              : "gemini-3.1-flash-lite",
+    "Gemini 3.0 Flash Preview"                  : "gemini-3-flash-preview",
+    "Gemini 2.5 Flash ✦ Stable"                 : "gemini-2.5-flash",
+    "Gemini 2.5 Flash Lite"                     : "gemini-2.5-flash-lite",
+    "Gemma 4 (31B) ✦ Open Weights"              : "gemma-4-31b-it",
+    "Gemma 4 (26B A4B) ✦ Optimized"             : "gemma-4-26b-a4b-it",
+}
+
 def discover_available_models(api_key: str) -> list[str]:
     """Dynamically discover all models available for the provided API key."""
     if not GENAI_AVAILABLE:
