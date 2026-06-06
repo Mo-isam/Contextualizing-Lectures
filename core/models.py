@@ -32,3 +32,17 @@ class AlignedNote:
     ai_insight: str
     timestamp_start: float
     timestamp_end: float
+
+
+@dataclass
+class LectureSession:
+    """Strict data contract for saving and loading lecture state, decoupling UI from backend."""
+    session_name: str
+    pdf_path: str | None
+    media_path: str | None
+    audio_path: str | None
+    transcript_segments: list[TranscriptSegment] | None
+    slides: list[Slide] | None
+    final_output: list[AlignedNote] | None
+    session_id: str | None = None
+    timestamp: float = 0.0

@@ -31,6 +31,7 @@ from core.pdf_processor   import extract_slide_text, get_pdf_info, render_pdf_to
 from core.ai_aligner      import align_transcript_to_slides, discover_available_models, GEMINI_MODEL_PRIORITY
 
 # ── Local Storage Modules ──────────────────────────────────────────────────────
+from core.models import LectureSession
 from core.storage import save_session, load_session, list_saved_sessions, FILES_DIR, SESSIONS_DIR
 from ui.assets import load_css, inject_jump_script
 from ui.components import render_audio_player, render_pdf_viewer_images, render_note_card, step_badge
@@ -327,15 +328,13 @@ with st.sidebar:
             if st.button("Load Selected Session", width="stretch"):
                 with st.spinner("⏳ Loading session..."):
                     try:
-                        data = load_session(selected_session_file)
-                        st.session_state.pdf_path = data.get("pdf_path")
-                        st.session_state.media_path = data.get("media_path")
-                        st.session_state.transcript_segments = data.get("transcript_segments")
-                        st.session_state.slides = data.get("slides")
-                        st.session_state.final_output = data.get("final_output")
-                        
-                        st.session_state.media_path = data.get("media_path")
-                        st.session_state.audio_path = data.get("audio_path")
+                        session_data = load_session(selected_session_file)
+                        st.session_state.pdf_path = session_data.pdf_path
+                        st.session_state.media_path = session_data.media_path
+                        st.session_state.audio_path = session_data.audio_path
+                        st.session_state.transcript_segments = session_data.transcript_segments
+                        st.session_state.slides = session_data.slides
+                        st.session_state.final_output = session_data.final_output
 
                         st.session_state.slide_images = None  # regenerate on-the-fly
                         st.session_state.active_slide = 1
@@ -362,10 +361,17 @@ with st.sidebar:
             else:
                 with st.spinner("⏳ Saving session..."):
                     try:
-                        # Pass state as a standard dictionary and provide the temp_dir
+                        session_data = LectureSession(
+                            session_name=save_name.strip(),
+                            pdf_path=st.session_state.get("pdf_path"),
+                            media_path=st.session_state.get("media_path"),
+                            audio_path=st.session_state.get("audio_path"),
+                            transcript_segments=st.session_state.get("transcript_segments"),
+                            slides=st.session_state.get("slides"),
+                            final_output=st.session_state.get("final_output")
+                        )
                         save_session(
-                            session_name=save_name.strip(), 
-                            state=dict(st.session_state), 
+                            session_data=session_data, 
                             temp_dir=st.session_state.get("temp_dir")
                         )
                         st.success(f"✅ Saved as '{save_name}'!")

@@ -12,7 +12,7 @@ import logging
 import uuid
 from dataclasses import asdict
 
-from core.models import TranscriptSegment, Slide, AlignedNote
+from core.models import TranscriptSegment, Slide, AlignedNote, LectureSession
 
 logger = logging.getLogger(__name__)
 
@@ -23,17 +23,17 @@ SESSIONS_DIR = os.path.join(DATA_STORAGE_DIR, "sessions")
 FILES_DIR = os.path.join(DATA_STORAGE_DIR, "files")
 
 
-def save_session(session_name: str, state: dict, temp_dir: str = None) -> str:
+def save_session(session_data: LectureSession, temp_dir: str = None) -> str:
     """Save the current processed lecture session to local storage."""
     os.makedirs(SESSIONS_DIR, exist_ok=True)
     os.makedirs(FILES_DIR, exist_ok=True)
 
-    slug = "".join([c if c.isalnum() or c in ("-", "_") else "_" for c in session_name]).strip()
+    slug = "".join([c if c.isalnum() or c in ("-", "_") else "_" for c in session_data.session_name]).strip()
     # Replace low-resolution timestamp with UUID to guarantee no file collisions
     session_id = f"{slug}_{uuid.uuid4().hex[:8]}"
 
-    pdf_path = state.get("pdf_path")
-    media_path = state.get("media_path")
+    pdf_path = session_data.pdf_path
+    media_path = session_data.media_path
     
     saved_pdf_path = None
     saved_media_path = None
@@ -69,14 +69,14 @@ def save_session(session_name: str, state: dict, temp_dir: str = None) -> str:
         return [asdict(item) if hasattr(item, '__dataclass_fields__') else item for item in obj_list]
 
     metadata = {
-        "session_name"        : session_name,
+        "session_name"        : session_data.session_name,
         "session_id"          : session_id,
         "pdf_path"            : saved_pdf_path,
         "media_path"          : saved_media_path,
         "audio_path"          : saved_audio_path,
-        "transcript_segments" : _to_dict(state.get("transcript_segments")),
-        "slides"              : _to_dict(state.get("slides")),
-        "final_output"        : _to_dict(state.get("final_output")),
+        "transcript_segments" : _to_dict(session_data.transcript_segments),
+        "slides"              : _to_dict(session_data.slides),
+        "final_output"        : _to_dict(session_data.final_output),
         "timestamp"           : time.time(),
     }
 
@@ -114,8 +114,8 @@ def list_saved_sessions() -> list[dict]:
     return sessions
 
 
-def load_session(filename: str) -> dict:
-    """Load session data and dynamically resolve relative paths to absolute runtime paths."""
+def load_session(filename: str) -> LectureSession:
+    """Load session data and return a strictly typed LectureSession object."""
     path = os.path.join(SESSIONS_DIR, filename)
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -126,13 +126,19 @@ def load_session(filename: str) -> dict:
             file_name = os.path.basename(val)
             data[key] = os.path.join(FILES_DIR, file_name)
             
-    # Upgrade JSON dicts back to Dataclass objects for the rest of the app
-    if data.get("transcript_segments"):
-        data["transcript_segments"] = [TranscriptSegment(**item) for item in data["transcript_segments"]]
-    if data.get("slides"):
-        data["slides"] = [Slide(**item) for item in data["slides"]]
-    if data.get("final_output"):
-        # Relies on strict kwargs matching; will correctly throw TypeError if an old session is loaded
-        data["final_output"] = [AlignedNote(**item) for item in data["final_output"]]
+    # Upgrade JSON dicts back to Dataclass objects
+    segments = [TranscriptSegment(**item) for item in data.get("transcript_segments", [])] if data.get("transcript_segments") else None
+    slides = [Slide(**item) for item in data.get("slides", [])] if data.get("slides") else None
+    final_output = [AlignedNote(**item) for item in data.get("final_output", [])] if data.get("final_output") else None
             
-    return data
+    return LectureSession(
+        session_name=data.get("session_name", "Untitled"),
+        session_id=data.get("session_id"),
+        pdf_path=data.get("pdf_path"),
+        media_path=data.get("media_path"),
+        audio_path=data.get("audio_path"),
+        transcript_segments=segments,
+        slides=slides,
+        final_output=final_output,
+        timestamp=data.get("timestamp", 0.0)
+    )
