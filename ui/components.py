@@ -23,8 +23,9 @@ def render_audio_player():
     audio_path = st.session_state.get("audio_path")
     media_path = st.session_state.get("media_path")
     
-    # Fallback: If the extracted .wav was deleted, play the original .mp4 / .mp3
-    target_path = audio_path if (audio_path and os.path.exists(audio_path)) else media_path
+    # Smart Playback: Prioritize original compressed media (.mp4, .mp3) to save browser RAM.
+    # Fallback to the extracted .wav only if the original media is somehow missing.
+    target_path = media_path if (media_path and os.path.exists(media_path)) else audio_path
     
     if target_path and os.path.exists(target_path):
         st.audio(target_path)

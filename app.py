@@ -501,7 +501,7 @@ if files_ready and st.session_state.final_output is None:
                 st.error(f"PDF error: {e}")
                 st.stop()
 
-        # ── Stage 2c: Setup audio path for player ───────────────────────────────
+        # ── Stage 2c: Track backend audio path for storage ────────────────────────
         try:
             ext = os.path.splitext(st.session_state.media_path)[1].lower()
             if ext in [".mp3", ".wav"]:
