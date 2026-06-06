@@ -126,9 +126,9 @@ def render_pdf_to_images(pdf_path: str, output_dir: str) -> list[str]:
             pix.save(img_path)
             image_paths.append(img_path)
             
-            # Explicitly free PyMuPDF C-level allocations to prevent memory leaks
-            pix = None
-            page = None
+            # Explicitly delete objects to force immediate C-level garbage collection
+            del pix
+            del page
     finally:
         doc.close()
         
