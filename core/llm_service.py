@@ -12,7 +12,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 try:
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types
     GENAI_AVAILABLE = True
 except ImportError:
     GENAI_AVAILABLE = False
@@ -42,19 +43,16 @@ DEFAULT_MODEL_OPTIONS = {
 
 def discover_available_models(api_key: str) -> list[str]:
     """Dynamically discover all models available for the provided API key."""
-    if not GENAI_AVAILABLE:
-        return []
-    if not api_key or not api_key.strip():
+    if not GENAI_AVAILABLE or not api_key.strip():
         return []
     try:
-        genai.configure(api_key=api_key.strip())
+        client = genai.Client(api_key=api_key.strip())
         available = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                name = m.name
-                if name.startswith("models/"):
-                    name = name[7:]
-                available.append(name)
+        for m in client.models.list():
+            name = m.name
+            if name.startswith("models/"):
+                name = name[7:]
+            available.append(name)
         return available
     except Exception as e:
         logger.error(f"Error discovering Gemini models: {e}")
@@ -142,25 +140,32 @@ def is_quota_exhausted(exc_str: str) -> bool:
 def upload_and_wait_for_file(file_path: str, api_key: str, timeout: int = 300):
     """Uploads a file to the GenAI cloud and waits for it to become ACTIVE."""
     if not GENAI_AVAILABLE:
-        raise ImportError("google-generativeai is not installed.")
-    genai.configure(api_key=api_key.strip())
+        raise ImportError("google-genai is not installed.")
     
-    gemini_file = genai.upload_file(file_path)
+    client = genai.Client(api_key=api_key.strip())
+    gemini_file = client.files.upload(file=file_path)
+    
     wait_start = time.time()
-    while gemini_file.state.name == "PROCESSING":
+    # The new SDK state can be an enum or a string. We handle both dynamically.
+    def _is_processing(f):
+        state = getattr(f, "state", "")
+        name = getattr(state, "name", state)
+        return str(name).upper() == "PROCESSING"
+
+    while _is_processing(gemini_file):
         if time.time() - wait_start > timeout:
             raise TimeoutError(f"Cloud API timed out processing file after {timeout} seconds.")
         time.sleep(2)
-        gemini_file = genai.get_file(gemini_file.name)
+        gemini_file = client.files.get(name=gemini_file.name)
     return gemini_file
 
 def delete_cloud_file(file_name: str, api_key: str):
     """Deletes a file from the GenAI cloud."""
     if not GENAI_AVAILABLE:
         return
-    genai.configure(api_key=api_key.strip())
+    client = genai.Client(api_key=api_key.strip())
     try:
-        genai.delete_file(file_name)
+        client.files.delete(name=file_name)
     except Exception as e:
         logger.warning(f"Failed to delete cloud file {file_name}: {e}")
 
@@ -191,26 +196,28 @@ def generate_content_with_fallback(
         AllModelsFailedError: If all retries on all models fail.
     """
     if not GENAI_AVAILABLE:
-        raise ImportError("google-generativeai is not installed.")
+        raise ImportError("google-genai is not installed.")
 
-    genai.configure(api_key=api_key.strip())
+    client = genai.Client(api_key=api_key.strip())
     
     gen_config = None
     if schema is not None:
-        gen_config = genai.GenerationConfig(
+        gen_config = types.GenerateContentConfig(
             temperature=temperature,
             response_mime_type="application/json",
             response_schema=schema
         )
 
     for model_id in models_to_try:
-        model = genai.GenerativeModel(model_id)
-        
         for attempt in range(1, max_retries + 1):
             _apply_proactive_pacing(api_key, model_id, is_paid, progress_cb, progress_idx)
             
             try:
-                response = model.generate_content(contents, generation_config=gen_config)
+                response = client.models.generate_content(
+                    model=model_id, 
+                    contents=contents, 
+                    config=gen_config
+                )
                 # Accessing .text triggers the parsing; if blocked, it throws an exception here
                 raw_text = response.text.strip()
                 # Defensively strip Markdown code blocks that Gemini sometimes wraps JSON in
