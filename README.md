@@ -8,6 +8,7 @@ This project follows a strict modular architecture separating the user interface
 * **Variable Semantic Chunking & Overlapping Context:** Audio is sliced dynamically based on natural pauses. The AI Aligner passes the end of the previous chunk into the next prompt as `<previous_context>`, ensuring the LLM never loses the conversational thread during boundary splits.
 * **Chain-of-Thought Alignment:** The AI uses a strict JSON schema that forces it to explain its reasoning step-by-step *before* mapping IDs, drastically reducing hallucinations.
 * **Per-User Proactive API Pacing:** Instead of reactive blocking, the pipeline calculates exact target RPMs per API key, injecting 1-second UI-yielding micro-sleeps only when necessary. Paid API users can bypass this via the UI.
+* **O(1) Data Locality & Deduplication:** Uploads are hashed (SHA-256) for instant deduplication. Massive media files are streamed natively via HTTP range requests, and transient memory (like uncompressed Whisper WAVs) is aggressively garbage-collected.
 
 ```text
 .
@@ -17,9 +18,9 @@ This project follows a strict modular architecture separating the user interface
 ├── core/                 # Pure backend logic (No Streamlit allowed here)
 │   ├── models.py         # Strict Dataclass blueprints (Slide, TranscriptSegment)
 │   ├── llm_service.py    # Proactive API pacing and retry engine
-│   ├── storage.py        # Atomic local JSON session saving/loading
+│   ├── storage.py        # O(1) instant JSON session saving and SHA-256 file deduplication
 │   └── ...processors.py  # Audio, PDF, and Semantic Alignment logic
-└── data_storage/         # Ephemeral local storage for files and sessions
+└── data_storage/         # Persistent storage for sessions, hashed files, and transient /tmp/
 ```
 
 ## 🚀 Installation & Usage

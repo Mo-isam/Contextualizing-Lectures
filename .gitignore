@@ -8,3 +8,4 @@ __pycache__
 data
 .vscode
 data_storage
+config.yaml

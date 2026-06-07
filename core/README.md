@@ -9,5 +9,5 @@ This folder contains the pure backend logic, data transformation, and LLM networ
 ### 🧩 Key Components
 * **`models.py`**: The strict source of truth for data structures (e.g., `AlignedNote`, `LectureSession`). By enforcing `LectureSession`, we completely decouple the backend from Streamlit's arbitrary session state.
 * **`llm_service.py`**: The centralized AI API gateway and Facade. It completely abstracts the `google-genai` SDK, manages cloud media storage, formats JSON schemas, and utilizes a proactive pacing dictionary to maintain exact RPMs without freezing the UI.
-* **`storage.py`**: Handles writing objects to disk using OS-level atomic writes and `uuid.uuid4()` filenames, mathematically guaranteeing zero file-collision race conditions when the UI reloads rapidly.
+* **`storage.py`**: Handles writing objects to disk using OS-level atomic writes. It uses a Content-Addressable Storage approach (SHA-256 short hashes) to achieve O(1) instant session saves and zero-duplication file uploads.
 * **`ai_aligner.py`**: The semantic mapping engine. It uses a Variable Semantic Chunker to slice transcripts, and utilizes `<previous_context>` injection alongside Chain-of-Thought JSON Schema generation to achieve highly accurate, non-linear transcript-to-slide mapping.
