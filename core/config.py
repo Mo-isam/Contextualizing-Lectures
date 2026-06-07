@@ -63,6 +63,16 @@ alignment:
 pdf:
   # Resolution zoom for slide image rendering (1.0 = standard, 2.0 = crisp/high-res)
   render_zoom: 2.0
+
+ui_defaults:
+  # Default API tier (true = Paid, false = Free)
+  is_paid_api: false
+  # Default model selection (must match a value in model_options)
+  default_model: "gemini-3.5-flash"
+  # Default slide extraction engine: "Native (PyMuPDF) - Fast" or "AI Vision (Gemini) - High Accuracy"
+  pdf_engine: "Native (PyMuPDF) - Fast"
+  # Default audio transcription engine: "Local Whisper (CPU) - Private" or "AI Audio (Gemini) - Fast/Cloud"
+  tx_engine: "Local Whisper (CPU) - Private"
 """
 
 class AppConfig:
