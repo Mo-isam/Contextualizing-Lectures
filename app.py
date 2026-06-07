@@ -28,6 +28,7 @@ from core.audio_processor import process_media_file
 from core.pdf_processor   import extract_slide_text, get_pdf_info, render_pdf_to_images, extract_slide_text_ai
 from core.ai_aligner      import align_transcript_to_slides
 from core.llm_service     import discover_available_models, GEMINI_MODEL_PRIORITY, DEFAULT_MODEL_OPTIONS
+from core.config          import app_config
 
 # ── Local Storage Modules ──────────────────────────────────────────────────────
 from core.models import LectureSession
@@ -184,7 +185,8 @@ with st.sidebar:
 
     # ── API Tier ──────────────────────────────────────────────────────────────
     st.markdown("**💸 API Quota Tier**")
-    is_paid_api = st.checkbox("💎 Paid / Tier-1 API Key (Disable Pacing)", value=False, help="Check this if you have a paid Google AI account to bypass all artificial rate limiting and run at maximum speed.")
+    default_paid = app_config.get("ui_defaults", "is_paid_api", False)
+    is_paid_api = st.checkbox("💎 Paid / Tier-1 API Key (Disable Pacing)", value=default_paid, help="Check this if you have a paid Google AI account to bypass all artificial rate limiting and run at maximum speed.")
     
     st.divider()
 
@@ -214,10 +216,18 @@ with st.sidebar:
                 label = f"{m} ✦ Pro / Paid"
                 MODEL_OPTIONS[label] = m
 
+    # Find the index of the default model from config
+    target_model_id = app_config.get("ui_defaults", "default_model", "gemini-3.5-flash")
+    default_model_idx = 0
+    for i, (label, model_id) in enumerate(MODEL_OPTIONS.items()):
+        if model_id == target_model_id:
+            default_model_idx = i
+            break
+
     model_label = st.selectbox(
         "Model",
         options=list(MODEL_OPTIONS.keys()),
-        index=0,
+        index=default_model_idx,
         label_visibility="collapsed",
         help=(
             "If you see 429 quota errors, try switching models or wait for the daily reset (midnight Pacific)."
@@ -240,16 +250,26 @@ with st.sidebar:
 
     # ── Pipeline Settings ─────────────────────────────────────────────────────
     st.markdown("**⚙️ Pipeline Settings**")
+    
+    pdf_opts = ["Native (PyMuPDF) - Fast", "AI Vision (Gemini) - High Accuracy"]
+    pdf_default = app_config.get("ui_defaults", "pdf_engine", pdf_opts[0])
+    pdf_idx = pdf_opts.index(pdf_default) if pdf_default in pdf_opts else 0
+    
     st.session_state.pdf_engine = st.selectbox(
         "Slide Extraction",
-        options=["Native (PyMuPDF) - Fast", "AI Vision (Gemini) - High Accuracy"],
-        index=0,
+        options=pdf_opts,
+        index=pdf_idx,
         help="Use AI Vision if your PDF contains images of text instead of raw text."
     )
+    
+    tx_opts = ["Local Whisper (CPU) - Private", "AI Audio (Gemini) - Fast/Cloud"]
+    tx_default = app_config.get("ui_defaults", "tx_engine", tx_opts[0])
+    tx_idx = tx_opts.index(tx_default) if tx_default in tx_opts else 0
+    
     st.session_state.tx_engine = st.selectbox(
         "Audio Transcription",
-        options=["Local Whisper (CPU) - Private", "AI Audio (Gemini) - Fast/Cloud"],
-        index=0,
+        options=tx_opts,
+        index=tx_idx,
         help="AI Audio is significantly faster on standard PCs but uses API quota."
     )
 
