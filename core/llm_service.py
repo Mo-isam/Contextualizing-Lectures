@@ -114,7 +114,9 @@ def extract_retry_delay(exc_str: str, buffer_sec: int = 5) -> int:
 
 def is_quota_exhausted(exc_str: str) -> bool:
     """Check if the error is a hard daily quota exhaustion."""
-    return "limit: 0" in exc_str and "GenerateRequestsPerDay" in exc_str
+    # Google's backend format changes (e.g., limit: 0 vs limit: 20).
+    # The mere presence of GenerateRequestsPerDay indicates the daily bucket is empty.
+    return "GenerateRequestsPerDay" in exc_str
 
 
 # ── Cloud File Management ──────────────────────────────────────────────────────
