@@ -39,12 +39,14 @@ llm:
 
   # Free-tier limits for proactive UI pacing (Requests Per Minute)
   rpm_limits:
-    gemini-3.5-flash: 15
-    gemini-3.1-flash-lite: 30
-    gemini-3-flash-preview: 15
-    gemini-2.5-flash: 15
-    gemini-2.5-flash-lite: 30
-    default: 15
+    gemini-3.5-flash: 5
+    gemini-3.1-flash-lite: 15
+    gemini-3-flash-preview: 5
+    gemini-2.5-flash: 5
+    gemini-2.5-flash-lite: 15
+    gemma-4-31b-it: 5
+    gemma-4-26b-a4b-it: 5
+    default: 5
 
 audio:
   # OpenAI Whisper model size: "tiny", "base", "small", "medium", "large"
