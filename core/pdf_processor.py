@@ -14,6 +14,7 @@ from PIL import Image
 
 from core.llm_service import generate_content_with_fallback, SafetyFilterError, AllModelsFailedError
 from core.models import Slide
+from core.config import app_config
 
 logger = logging.getLogger(__name__)
 
@@ -108,8 +109,8 @@ def render_pdf_to_images(pdf_path: str, output_dir: str) -> list[str]:
     
     os.makedirs(output_dir, exist_ok=True)
     
-    # 2.0 zoom ensures crisp text without making file sizes too large
-    zoom = 2.0
+    # Zoom ensures crisp text without making file sizes too large
+    zoom = float(app_config.get("pdf", "render_zoom", 2.0))
     mat = fitz.Matrix(zoom, zoom)
     
     try:

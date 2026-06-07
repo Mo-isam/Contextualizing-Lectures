@@ -28,9 +28,11 @@ except ImportError:
     WHISPER_AVAILABLE = False
 
 
+from core.config import app_config
+
 # ── Constants ──────────────────────────────────────────────────────────────────
-WHISPER_MODEL_SIZE = "base"   # Change to "small" / "medium" for better accuracy
-AUDIO_SAMPLE_RATE  = 16000    # Whisper expects 16 kHz mono
+WHISPER_MODEL_SIZE = app_config.get("audio", "whisper_model_size", "base")
+AUDIO_SAMPLE_RATE  = app_config.get("audio", "sample_rate", 16000)
 
 # Global cache to prevent VRAM thrashing and slow re-loads on repeat runs
 _whisper_model_cache = None

@@ -24,9 +24,11 @@ from core.models import TranscriptSegment, Slide, AlignedNote
 
 logger = logging.getLogger(__name__)
 
+from core.config import app_config
+
 # ── Configuration ──────────────────────────────────────────────────────────────
-MIN_CHUNK_DURATION_SEC = 180      # 3-minute minimum accumulation
-MAX_CHUNK_DURATION_SEC = 300      # 5-minute absolute maximum limit
+MIN_CHUNK_DURATION_SEC = app_config.get("alignment", "min_chunk_duration_sec", 180)
+MAX_CHUNK_DURATION_SEC = app_config.get("alignment", "max_chunk_duration_sec", 300)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
