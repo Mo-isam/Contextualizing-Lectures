@@ -32,37 +32,15 @@ def save_session(session_data: LectureSession, temp_dir: str = None) -> str:
     # Replace low-resolution timestamp with UUID to guarantee no file collisions
     session_id = f"{slug}_{uuid.uuid4().hex[:8]}"
 
-    pdf_path = session_data.pdf_path
-    media_path = session_data.media_path
-    
+    # Files are now natively saved to data_storage/files on upload,
+    # so we just extract the relative path for portable JSON storage.
     saved_pdf_path = None
+    if session_data.pdf_path:
+        saved_pdf_path = f"files/{os.path.basename(session_data.pdf_path)}"
+        
     saved_media_path = None
-    saved_audio_path = None
-
-    if pdf_path and os.path.exists(pdf_path):
-        pdf_ext = os.path.splitext(pdf_path)[1]
-        saved_pdf_path = os.path.join(FILES_DIR, f"{session_id}{pdf_ext}")
-        shutil.copy2(pdf_path, saved_pdf_path)
-        # Store only relative filename
-        saved_pdf_path = f"files/{session_id}{pdf_ext}"
-
-    if media_path and os.path.exists(media_path):
-        media_ext = os.path.splitext(media_path)[1]
-        saved_media_path = os.path.join(FILES_DIR, f"{session_id}{media_ext}")
-        shutil.copy2(media_path, saved_media_path)
-        # Store only relative filename
-        saved_media_path = f"files/{session_id}{media_ext}"
-
-        # --- Save the lightweight extracted .wav if it's a video ---
-        if media_ext.lower() == ".mp4" and temp_dir:
-            base_name = os.path.splitext(os.path.basename(media_path))[0]
-            temp_audio_path = os.path.join(temp_dir, "audio", f"{base_name}_audio.wav")
-            if os.path.exists(temp_audio_path):
-                disk_audio_path = os.path.join(FILES_DIR, f"{session_id}_audio.wav")
-                shutil.copy2(temp_audio_path, disk_audio_path)
-                saved_audio_path = f"files/{session_id}_audio.wav"
-        elif media_ext.lower() in [".mp3", ".wav"]:
-            saved_audio_path = saved_media_path
+    if session_data.media_path:
+        saved_media_path = f"files/{os.path.basename(session_data.media_path)}"
 
     def _to_dict(obj_list):
         if not obj_list: return None
@@ -73,7 +51,6 @@ def save_session(session_data: LectureSession, temp_dir: str = None) -> str:
         "session_id"          : session_id,
         "pdf_path"            : saved_pdf_path,
         "media_path"          : saved_media_path,
-        "audio_path"          : saved_audio_path,
         "transcript_segments" : _to_dict(session_data.transcript_segments),
         "slides"              : _to_dict(session_data.slides),
         "final_output"        : _to_dict(session_data.final_output),
@@ -120,7 +97,7 @@ def load_session(filename: str) -> LectureSession:
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
         
-    for key in ["pdf_path", "media_path", "audio_path"]:
+    for key in ["pdf_path", "media_path"]:
         val = data.get(key)
         if val and val.startswith("files/"):
             file_name = os.path.basename(val)
@@ -136,7 +113,6 @@ def load_session(filename: str) -> LectureSession:
         session_id=data.get("session_id"),
         pdf_path=data.get("pdf_path"),
         media_path=data.get("media_path"),
-        audio_path=data.get("audio_path"),
         transcript_segments=segments,
         slides=slides,
         final_output=final_output,
