@@ -23,7 +23,6 @@ import streamlit as st
 import shutil
 
 # ── Local modules ──────────────────────────────────────────────────────────────
-import tempfile
 from core.file_utils      import save_file, convert_pptx_to_pdf, SUPPORTED_MEDIA_EXT
 from core.audio_processor import process_media_file
 from core.pdf_processor   import extract_slide_text, get_pdf_info, render_pdf_to_images, extract_slide_text_ai
@@ -61,7 +60,6 @@ def _init_state():
         "slides"              : None,
         "final_output"        : None,
         "pipeline_running"    : False,
-        "audio_path"          : None,
         "discovered_models"   : [],
         "last_api_key"        : None,
         "slide_images"        : None,
@@ -81,9 +79,12 @@ _init_state()
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def get_or_create_temp_dir() -> str:
-    """Return (and cache) a persistent temp directory for the session."""
+    """Return (and cache) a persistent temp directory inside data_storage/tmp."""
     if "temp_dir" not in st.session_state:
-        st.session_state["temp_dir"] = tempfile.mkdtemp(prefix="ctx_lectures_")
+        import uuid
+        tmp_path = os.path.join(os.path.dirname(FILES_DIR), "tmp", f"session_{uuid.uuid4().hex[:8]}")
+        os.makedirs(tmp_path, exist_ok=True)
+        st.session_state["temp_dir"] = tmp_path
     return st.session_state["temp_dir"]
 
 def cleanup_temp_dir():
@@ -118,12 +119,14 @@ def render_upload_ui() -> tuple:
         if ext not in [".pdf", ".pptx", ".ppt"]:
             st.error("❌ Please upload a valid PDF or PowerPoint file.")
         else:
-            target_dir = os.path.join(temp_dir, "presentation" if ext in [".pptx", ".ppt"] else "pdf")
+            # PPTX goes to temp_dir, direct PDFs go straight to permanent FILES_DIR
+            target_dir = os.path.join(temp_dir, "presentation") if ext in [".pptx", ".ppt"] else FILES_DIR
             saved_path = save_file(pdf_file.getbuffer(), pdf_file.name, target_dir)
             
             if ext in [".pptx", ".ppt"]:
+                # The converted PDF goes straight to FILES_DIR
                 pdf_name = os.path.splitext(pdf_file.name)[0] + ".pdf"
-                pdf_path = os.path.join(temp_dir, "pdf", pdf_name)
+                pdf_path = save_file(b"", pdf_name, FILES_DIR) # Register deduplicated hash/name
                 with st.spinner("⏳ Converting PowerPoint to PDF..."):
                     try:
                         convert_pptx_to_pdf(saved_path, pdf_path)
@@ -140,7 +143,8 @@ def render_upload_ui() -> tuple:
         if ext not in SUPPORTED_MEDIA_EXT:
             st.error("❌ Unsupported media format. Use MP4, MP3, or WAV.")
         else:
-            media_path = save_file(media_file.getbuffer(), media_file.name, os.path.join(temp_dir, "media"))
+            # Media goes straight to permanent FILES_DIR immediately
+            media_path = save_file(media_file.getbuffer(), media_file.name, FILES_DIR)
             st.success(f"✅ Media saved: `{media_file.name}`")
 
     return pdf_path, media_path
@@ -309,7 +313,6 @@ with st.sidebar:
                         session_data = load_session(selected_session_file)
                         st.session_state.pdf_path = session_data.pdf_path
                         st.session_state.media_path = session_data.media_path
-                        st.session_state.audio_path = session_data.audio_path
                         st.session_state.transcript_segments = session_data.transcript_segments
                         st.session_state.slides = session_data.slides
                         st.session_state.final_output = session_data.final_output
@@ -346,7 +349,6 @@ with st.sidebar:
                             session_name=save_name.strip(),
                             pdf_path=st.session_state.get("pdf_path"),
                             media_path=st.session_state.get("media_path"),
-                            audio_path=st.session_state.get("audio_path"),
                             transcript_segments=st.session_state.get("transcript_segments"),
                             slides=st.session_state.get("slides"),
                             final_output=st.session_state.get("final_output")
@@ -479,18 +481,7 @@ if files_ready and st.session_state.final_output is None:
                 st.error(f"PDF error: {e}")
                 st.stop()
 
-        # ── Stage 2c: Track backend audio path for storage ────────────────────────
-        try:
-            ext = os.path.splitext(st.session_state.media_path)[1].lower()
-            if ext in [".mp3", ".wav"]:
-                st.session_state.audio_path = st.session_state.media_path
-            else:
-                base_name = os.path.splitext(os.path.basename(st.session_state.media_path))[0]
-                st.session_state.audio_path = os.path.join(temp_dir, "audio", f"{base_name}_audio.wav")
-        except Exception as e:
-            st.warning(f"⚠️ Could not set up audio for player: {e}")
-
-        # ── Stage 2d: AI Alignment ─────────────────────────────────────────
+        # ── Stage 2c: AI Alignment ─────────────────────────────────────────
         progress_bar = st.progress(0, text="Starting AI alignment…")
         status_text  = st.empty()
 

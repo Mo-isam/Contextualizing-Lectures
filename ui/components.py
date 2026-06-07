@@ -20,15 +20,11 @@ def seconds_to_hms(s: float) -> str:
 
 def render_audio_player():
     """Render Streamlit's highly optimized native audio streaming player."""
-    audio_path = st.session_state.get("audio_path")
     media_path = st.session_state.get("media_path")
     
-    # Smart Playback: Prioritize original compressed media (.mp4, .mp3) to save browser RAM.
-    # Fallback to the extracted .wav only if the original media is somehow missing.
-    target_path = media_path if (media_path and os.path.exists(media_path)) else audio_path
-    
-    if target_path and os.path.exists(target_path):
-        st.audio(target_path)
+    # Smart Playback: The browser handles MP4/MP3 streaming natively via range requests
+    if media_path and os.path.exists(media_path):
+        st.audio(media_path)
     else:
         st.warning("⚠️ Audio file could not be found. The 'Play at' buttons will not work.")
 
