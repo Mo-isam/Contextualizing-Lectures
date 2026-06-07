@@ -40,7 +40,6 @@ class LectureSession:
     session_name: str
     pdf_path: str | None
     media_path: str | None
-    audio_path: str | None
     transcript_segments: list[TranscriptSegment] | None
     slides: list[Slide] | None
     final_output: list[AlignedNote] | None
