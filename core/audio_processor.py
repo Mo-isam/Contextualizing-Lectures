@@ -257,6 +257,10 @@ def transcribe_audio_ai(audio_path: str, temp_dir: str, api_key: str, models_to_
         finally:
             delete_cloud_file(gemini_file.name, api_key) # Clean up cloud storage regardless of success
 
+    # Transient cleanup: Delete local chunks
+    if os.path.exists(chunk_dir):
+        shutil.rmtree(chunk_dir, ignore_errors=True)
+
     return all_segments
 
 
@@ -265,18 +269,28 @@ def transcribe_audio_ai(audio_path: str, temp_dir: str, api_key: str, models_to_
 def process_media_file(media_path: str, temp_dir: str, engine: str = "local", api_key: str = "", models_to_try: list = None, is_paid: bool = False, progress_cb=None) -> list[TranscriptSegment]:
     ext = os.path.splitext(media_path)[1].lower()
     audio_dir = os.path.join(temp_dir, "audio")
+    extracted_wav = False
 
     if ext == ".mp4":
         if progress_cb: progress_cb(0.0, "🎬 Extracting audio from video...")
         audio_path = extract_audio_from_video(media_path, audio_dir)
+        extracted_wav = True
     else:
         audio_path = media_path
 
-    if engine == "ai":
-        if not api_key: raise ValueError("API Key required for AI Transcription.")
-        segments = transcribe_audio_ai(audio_path, temp_dir, api_key, models_to_try, is_paid, progress_cb)
-    else:
-        if progress_cb: progress_cb(0.05, "🎙️ Preparing local Whisper transcription...")
-        segments = transcribe_audio(audio_path, progress_cb)
+    try:
+        if engine == "ai":
+            if not api_key: raise ValueError("API Key required for AI Transcription.")
+            segments = transcribe_audio_ai(audio_path, temp_dir, api_key, models_to_try, is_paid, progress_cb)
+        else:
+            if progress_cb: progress_cb(0.05, "🎙️ Preparing local Whisper transcription...")
+            segments = transcribe_audio(audio_path, progress_cb)
+    finally:
+        # Transient WAV cleanup: Delete massive uncompressed .wav immediately after transcription
+        if extracted_wav and os.path.exists(audio_path):
+            try:
+                os.remove(audio_path)
+            except Exception as e:
+                logger.warning(f"Could not delete transient wav file {audio_path}: {e}")
 
     return segments
