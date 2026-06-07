@@ -218,7 +218,11 @@ def generate_content_with_fallback(
                     contents=contents, 
                     config=gen_config
                 )
-                # Accessing .text triggers the parsing; if blocked, it throws an exception here
+                
+                # New SDK returns None for .text if the output is blocked by safety filters
+                if response.text is None:
+                    raise ValueError("Safety filter tripped: response.text is None.")
+
                 raw_text = response.text.strip()
                 # Defensively strip Markdown code blocks that Gemini sometimes wraps JSON in
                 clean_text = re.sub(r"^```(?:json)?\n?", "", raw_text, flags=re.IGNORECASE)
