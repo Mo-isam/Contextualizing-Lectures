@@ -241,18 +241,21 @@ def generate_content_with_fallback(
                     
                 # 2. Hard Quota Exhausted or Model Not Found
                 if is_quota_exhausted(exc_str) or "404" in exc_str:
-                    msg = f"⚠️ Model {model_id} exhausted/unavailable. Swapping models..."
+                    msg = f"⚠️ Model {model_id} exhausted/unavailable on {log_context}. Swapping models..."
                     logger.warning(msg)
                     if progress_cb: progress_cb(progress_idx, msg)
                     break  # Break attempt loop, move to next model in models_to_try
                     
-                # 3. Rate Limit (429) or Transient Error
+                # 3. Rate Limit (429), Overload (503), or Transient Error
                 if "429" in exc_str:
                     wait = min(extract_retry_delay(exc_str), max_wait_sec)
-                    msg = f"⏳ [{model_id}] rate limited. Waiting {wait}s..."
+                    msg = f"⏳ [{model_id}] rate limited on {log_context}. Waiting {wait}s..."
+                elif "503" in exc_str:
+                    wait = min(15 + (attempt * 5), max_wait_sec)
+                    msg = f"⚠️ [{model_id}] overloaded (503) on {log_context}. Retrying attempt {attempt} in {wait}s..."
                 else:
                     wait = min(15 + (attempt * 5), max_wait_sec)
-                    msg = f"⚠️ [{model_id}] attempt {attempt} failed: {exc_str[:60]}... Retrying in {wait}s..."
+                    msg = f"⚠️ [{model_id}] attempt {attempt} failed on {log_context}: {exc_str[:40]}... Retrying in {wait}s..."
                 
                 logger.warning(msg)
                 if progress_cb:
