@@ -19,27 +19,16 @@ except ImportError:
     GENAI_AVAILABLE = False
 
 
-# ── Configuration & Discovery ──────────────────────────────────────────────────
-GEMINI_MODEL_PRIORITY = [
-    "gemini-3.5-flash",
-    "gemini-3.1-flash-lite",
-    "gemini-3-flash-preview",
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-    "gemma-4-31b-it",
-    "gemma-4-26b-a4b-it",
-]
+from core.config import app_config
 
-DEFAULT_MODEL_OPTIONS = {
-    "Auto (try all, best quota)"                : "",
-    "Gemini 3.5 Flash ✦ Latest"                 : "gemini-3.5-flash",
-    "Gemini 3.1 Flash Lite ✦ Fast"              : "gemini-3.1-flash-lite",
-    "Gemini 3.0 Flash Preview"                  : "gemini-3-flash-preview",
-    "Gemini 2.5 Flash ✦ Stable"                 : "gemini-2.5-flash",
-    "Gemini 2.5 Flash Lite"                     : "gemini-2.5-flash-lite",
-    "Gemma 4 (31B) ✦ Open Weights"              : "gemma-4-31b-it",
-    "Gemma 4 (26B A4B) ✦ Optimized"             : "gemma-4-26b-a4b-it",
-}
+# ── Configuration & Discovery ──────────────────────────────────────────────────
+GEMINI_MODEL_PRIORITY = app_config.get("llm", "model_priority", [
+    "gemini-3.5-flash" # Fallback if yaml is missing
+])
+
+DEFAULT_MODEL_OPTIONS = app_config.get("llm", "model_options", {
+    "Auto (try all, best quota)": "" # Fallback if yaml is missing
+})
 
 def discover_available_models(api_key: str) -> list[str]:
     """Dynamically discover all models available for the provided API key."""
@@ -74,15 +63,8 @@ class AllModelsFailedError(Exception):
 # Dictionary to track pacing per individual API key
 _last_call_times = {}
 
-# Free tier limits (2026 guidelines)
-MODEL_RPM_LIMITS = {
-    "gemini-3.5-flash": 15,
-    "gemini-3.1-flash-lite": 30,
-    "gemini-3-flash-preview": 15,
-    "gemini-2.5-flash": 15,
-    "gemini-2.5-flash-lite": 30,
-    "default": 15
-}
+# Free tier limits (2026 guidelines) populated from config
+MODEL_RPM_LIMITS = app_config.get("llm", "rpm_limits", {"default": 15})
 
 def _apply_proactive_pacing(api_key: str, model_id: str, is_paid: bool, progress_cb, progress_idx: float):
     """Pace requests perfectly to avoid hitting 429 errors entirely."""
