@@ -4,25 +4,23 @@ An AI-powered pipeline that bridges static PDF slides with dynamic verbal insigh
 
 ## 🏗️ Architecture
 
-This project follows a strict modular architecture separating the user interface from backend processing. Key intelligent features include:
-* **Variable Semantic Chunking & Overlapping Context:** Audio is sliced dynamically based on natural pauses. The AI Aligner passes the end of the previous chunk into the next prompt as `<previous_context>`, ensuring the LLM never loses the conversational thread during boundary splits.
+This project follows a strict modular architecture separating the user interface from backend processing. Key features include:
+* **SPA "Wizard" State Machine:** The frontend uses a dynamic router (`app.py`), replacing cluttered sidebars with a clean, step-by-step Single-Page Application flow (Home → Upload → Processing → Studio) with dedicated modal dialogs.
+* **Live, Precise Progress Tracking:** The UI patches local CPU-bound processes (like Whisper's `tqdm`) to pipe real-time frame progression directly into elegant, right-aligned Streamlit progress bars.
+* **Variable Semantic Chunking & Overlapping Context:** Audio is sliced dynamically based on natural pauses. The AI Aligner passes the end of the previous chunk into the next prompt as `<previous_context>`, ensuring the LLM never loses context.
 * **Chain-of-Thought Alignment:** The AI uses a strict JSON schema that forces it to explain its reasoning step-by-step *before* mapping IDs, drastically reducing hallucinations.
-* **Per-User Proactive API Pacing & Fallback:** The pipeline dynamically reads rate limits from a YAML config, injecting micro-sleeps to avoid limits, and gracefully falls back through a priority list of models if daily quotas are exhausted.
-* **O(1) Storage & Deduplication:** Uploads are hashed (SHA-256) for instant deduplication. Massive audio files are streamed natively via HTTP Range Requests, and session saves execute in milliseconds (O(1)) without duplicating media files.
+* **Per-User Proactive API Pacing & Fallback:** The pipeline dynamically reads rate limits from a YAML config, injecting micro-sleeps to avoid limits, and gracefully falls back through a priority list of models.
+* **O(1) Storage & Deduplication:** Uploads are hashed (SHA-256) for instant deduplication. Sessions (with custom titles and descriptions) are saved locally and load instantly without duplicating media files.
 
 ```text
 .
-├── app.py                # Main Streamlit orchestrator
-├── config.yaml           # Auto-generated user configuration (Model limits, UI defaults, etc.)
+├── app.py                # Main Streamlit SPA Router (State Machine)
+├── config.yaml           # Auto-generated user configuration
 ├── requirements.txt      # Python dependencies
-├── ui/                   # Frontend layout, CSS, JS, and Streamlit widgets
+├── ui/                   # Frontend views, modals, CSS, and JS
+│   ├── dialogs.py        # Settings and Save Session modals
 ├── core/                 # Pure backend logic (No Streamlit allowed here)
 │   ├── config.py         # YAML Configuration Engine
-│   ├── models.py         # Strict Dataclass blueprints (Slide, TranscriptSegment)
-│   ├── llm_service.py    # Proactive API pacing and retry engine
-│   ├── storage.py        # O(1) instant JSON session saving/loading
-│   └── ...processors.py  # Audio, PDF, and Semantic Alignment logic
-└── data_storage/         # Local persistent storage for deduplicated files, sessions, and transient tmp/
 ```
 
 ## 🚀 Installation & Usage

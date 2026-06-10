@@ -8,8 +8,8 @@ This folder contains the pure backend logic, data transformation, and LLM networ
 
 ### 🧩 Key Components
 * **`config.py`**: The centralized Configuration Engine. It auto-generates and reads `config.yaml`, completely eliminating hardcoded "magic numbers" (like Whisper models, LLM RPM limits, and UI defaults) from the codebase.
-* **`models.py`**: The strict source of truth for data structures (e.g., `AlignedNote`, `LectureSession`). By enforcing `LectureSession`, we completely decouple the backend from Streamlit's arbitrary session state.
+* **`models.py`**: The strict source of truth for data structures (e.g., `AlignedNote`, `LectureSession`). Features like `session_description` are strictly typed here before touching the UI.
 * **`llm_service.py`**: The centralized AI API gateway and Facade. It completely abstracts the `google-genai` SDK, manages cloud media storage, handles transient JSON parsing, and utilizes `config.yaml` to dynamically apply proactive RPM pacing and fallback routing.
 * **`storage.py`**: Handles O(1) instantaneous session saving. It writes strictly-typed JSON metadata that points to deduplicated, SHA-256 hashed files, permanently solving massive disk bloat.
-* **`audio_processor.py`**: Manages FFmpeg media extractions and Whisper/Gemini routing. It strictly enforces transient memory limits, ensuring massive uncompressed `.wav` files are securely deleted the moment transcription completes.
+* **`audio_processor.py`**: Manages FFmpeg media extractions and Whisper/Gemini routing. It directly intercepts and patches the global `tqdm` module to stream live, frame-by-frame progress to the UI without coupling to Streamlit.
 * **`ai_aligner.py`**: The semantic mapping engine. It uses a Variable Semantic Chunker to slice transcripts, and utilizes `<previous_context>` injection alongside Chain-of-Thought JSON Schema generation to achieve highly accurate, non-linear transcript-to-slide mapping.
