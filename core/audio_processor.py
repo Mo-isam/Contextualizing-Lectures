@@ -132,19 +132,36 @@ def transcribe_audio(audio_path: str, progress_cb=None) -> list[TranscriptSegmen
     global _whisper_model_cache
     with _whisper_lock:
         if _whisper_model_cache is None:
-            # Load the Whisper model into memory once per application lifecycle.
-            # If it's not downloaded yet, Whisper will download it automatically here.
-            if progress_cb: progress_cb(0.1, f"📥 Loading/Downloading Whisper '{WHISPER_MODEL_SIZE}' model (this may take a moment)...")
+            if progress_cb: progress_cb(0.05, f"📥 Loading Whisper '{WHISPER_MODEL_SIZE}' model...")
             _whisper_model_cache = whisper.load_model(WHISPER_MODEL_SIZE)
 
-        if progress_cb: progress_cb(0.3, "🎙️ Whisper model active. Transcribing audio...")
+        if progress_cb: progress_cb(0.1, "🎙️ Whisper model active. Preparing audio frames...")
 
-        # transcribe() returns a dict with a "segments" key.
-        result = _whisper_model_cache.transcribe(
-            audio_path,
-            verbose=False,
-            # word_timestamps=True can be enabled for finer granularity.
-        )
+        # Directly monkey-patch the global tqdm module to capture Whisper's live frames
+        import tqdm
+        original_tqdm = tqdm.tqdm
+
+        class WhisperTqdm(original_tqdm):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+            def update(self, n=1):
+                super().update(n)
+                # Ensure we safely read self.total before doing math
+                if progress_cb and getattr(self, "total", 0) and self.total > 0:
+                    # Map tqdm's 0-100% to our remaining 10% to 100% UI bar
+                    frac = self.n / self.total
+                    scaled_frac = 0.1 + (frac * 0.9)
+                    progress_cb(scaled_frac, f"🎙️ Processing audio frames ({self.n}/{self.total})...")
+
+        tqdm.tqdm = WhisperTqdm
+
+        try:
+            result = _whisper_model_cache.transcribe(
+                audio_path,
+                verbose=False,
+            )
+        finally:
+            tqdm.tqdm = original_tqdm  # Restore original tqdm safely so other modules aren't affected
 
     # Normalise output — keep only the fields we need.
     segments = []
@@ -204,7 +221,8 @@ def transcribe_audio_ai(audio_path: str, temp_dir: str, api_key: str, models_to_
     
     for i, c_path in enumerate(chunks):
         time_offset = i * 300.0  # 5 minutes per chunk
-        if progress_cb: progress_cb(i/total_chunks, f"☁️ Uploading & Transcribing chunk {i+1}/{total_chunks}...")
+        pct = i / total_chunks
+        if progress_cb: progress_cb(pct, f"☁️ Uploading & Transcribing AI Chunk {i+1}/{total_chunks}...")
         
         # Upload and wait for cloud processing
         gemini_file = upload_and_wait_for_file(c_path, api_key)

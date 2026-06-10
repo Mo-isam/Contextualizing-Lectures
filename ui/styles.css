@@ -262,3 +262,15 @@ hr { border-color: rgba(255,255,255,0.06) !important; }
 .notes-panel::-webkit-scrollbar       { width: 4px; }
 .notes-panel::-webkit-scrollbar-track { background: transparent; }
 .notes-panel::-webkit-scrollbar-thumb { background: rgba(100,160,255,0.25); border-radius: 2px; }
+
+/* ── Hide Streamlit File Uploader Add (+) Button ──────────────────────── */
+/* 1. Target by common aria-labels or titles just in case */
+[data-testid="stFileUploader"] button[aria-label*="Add "],
+[data-testid="stFileUploader"] button[title*="Add "] {
+    display: none !important;
+}
+
+/* 2. THE NUKE: If a file is uploaded, hide ALL buttons in the uploader EXCEPT the 'X' (Remove) button */
+[data-testid="stFileUploader"]:has([data-testid="stUploadedFile"]) button:not([aria-label*="emove"]):not([title*="emove"]):not([aria-label*="elete"]):not([title*="elete"]) {
+    display: none !important;
+}

@@ -250,18 +250,29 @@ def view_upload():
             st.markdown("<br><br><div class='hero-title' style='font-size: 2.5rem;'>🤖 Analyzing Lecture...</div>", unsafe_allow_html=True)
             st.markdown("<br>", unsafe_allow_html=True)
             
+            def flex_header(title, pct=0.0):
+                return f"""<div style='display: flex; justify-content: space-between; font-weight: 600; margin-bottom: 8px;'>
+                             <span>{title}</span>
+                             <span style='color:#58a6ff;'>{int(pct*100)}%</span>
+                           </div>"""
+
             _, col_proc, _ = st.columns([1, 2, 1])
             with col_proc:
                 with st.container(border=True):
-                    st.write("🎙️ Transcribing Audio...")
+                    header1 = st.empty()
+                    header1.markdown(flex_header("📄 Extracting Text from Slides..."), unsafe_allow_html=True)
                     p1 = st.progress(0.0)
                     lbl1 = st.empty()
+                    st.markdown("<br>", unsafe_allow_html=True)
                     
-                    st.write("📄 Extracting Text from Slides...")
+                    header2 = st.empty()
+                    header2.markdown(flex_header("🎙️ Transcribing Audio..."), unsafe_allow_html=True)
                     p2 = st.progress(0.0)
                     lbl2 = st.empty()
+                    st.markdown("<br>", unsafe_allow_html=True)
                     
-                    st.write("🧠 Aligning Insights using Gemini...")
+                    header3 = st.empty()
+                    header3.markdown(flex_header("🧠 Aligning Insights using Gemini..."), unsafe_allow_html=True)
                     p3 = st.progress(0.0)
                     lbl3 = st.empty()
                     
@@ -296,25 +307,14 @@ def view_upload():
                 for m in GEMINI_MODEL_PRIORITY:
                     if m not in models_to_try: models_to_try.append(m)
 
-                # --- STAGE 1: AUDIO ---
-                def audio_cb(frac, msg): 
-                    p1.progress(min(max(frac, 0.0), 1.0))
+                # --- STAGE 1: PDF ---
+                def pdf_cb(frac, msg): 
+                    pct = min(max(frac, 0.0), 1.0)
+                    header1.markdown(flex_header("📄 Extracting Text from Slides...", pct), unsafe_allow_html=True)
+                    p1.progress(pct)
                     lbl1.caption(msg)
                     
-                engine = "ai" if "AI Audio" in st.session_state.tx_engine else "local"
-                st.session_state.transcript_segments = process_media_file(
-                    st.session_state.media_path, temp_dir,
-                    engine=engine, api_key=api_key, models_to_try=models_to_try, is_paid=is_paid_api, progress_cb=audio_cb
-                )
-                p1.progress(1.0)
-                lbl1.caption(f"✅ {len(st.session_state.transcript_segments)} segments transcribed.")
-
-                # --- STAGE 2: PDF ---
-                def pdf_cb(frac, msg): 
-                    p2.progress(min(max(frac, 0.0), 1.0))
-                    lbl2.caption(msg)
-                    
-                pdf_cb(0.1, "🎨 Rendering slide pages to crisp images...")
+                pdf_cb(0.0, "🎨 Rendering slide pages to crisp images...")
                 img_dir = os.path.join(temp_dir, "slide_images")
                 st.session_state.slide_images = render_pdf_to_images(st.session_state.pdf_path, img_dir)
                 st.session_state.active_slide = 1
@@ -326,15 +326,35 @@ def view_upload():
                     if empty_count > 0:
                         st.warning(f"⚠️ {empty_count} slides had no readable text. If alignment fails, switch 'Slide Extraction' to 'AI Vision' in Settings.")
                 else:
-                    slides = extract_slide_text_ai(st.session_state.slide_images, api_key, models_to_try, is_paid=is_paid_api, progress_cb=pdf_cb)
+                    def ai_pdf_cb(frac, msg):
+                        # Math: Map the AI's 0.0->1.0 to a smooth 10%->100% (0.1 -> 1.0)
+                        scaled_frac = 0.1 + (frac * 0.9)
+                        pdf_cb(scaled_frac, msg)
+                        
+                    slides = extract_slide_text_ai(st.session_state.slide_images, api_key, models_to_try, is_paid=is_paid_api, progress_cb=ai_pdf_cb)
                 
                 st.session_state.slides = slides
-                p2.progress(1.0)
-                lbl2.caption(f"✅ {len(slides)} slides processed.")
+                pdf_cb(1.0, f"✅ {len(slides)} slides processed.")
+
+                # --- STAGE 2: AUDIO ---
+                def audio_cb(frac, msg): 
+                    pct = min(max(frac, 0.0), 1.0)
+                    header2.markdown(flex_header("🎙️ Transcribing Audio...", pct), unsafe_allow_html=True)
+                    p2.progress(pct)
+                    lbl2.caption(msg)
+                    
+                engine = "ai" if "AI Audio" in st.session_state.tx_engine else "local"
+                st.session_state.transcript_segments = process_media_file(
+                    st.session_state.media_path, temp_dir,
+                    engine=engine, api_key=api_key, models_to_try=models_to_try, is_paid=is_paid_api, progress_cb=audio_cb
+                )
+                audio_cb(1.0, f"✅ {len(st.session_state.transcript_segments)} segments transcribed.")
 
                 # --- STAGE 3: AI ALIGNMENT ---
                 def align_cb(frac, msg): 
-                    p3.progress(min(max(frac, 0.0), 1.0))
+                    pct = min(max(frac, 0.0), 1.0)
+                    header3.markdown(flex_header("🧠 Aligning Insights using Gemini...", pct), unsafe_allow_html=True)
+                    p3.progress(pct)
                     lbl3.caption(msg)
                 
                 final_output = align_transcript_to_slides(
@@ -346,8 +366,7 @@ def view_upload():
                     progress_cb = align_cb,
                 )
                 st.session_state.final_output = final_output
-                p3.progress(1.0)
-                lbl3.caption(f"✅ Pipeline complete! {len(final_output)} notes generated.")
+                align_cb(1.0, f"✅ Pipeline complete! {len(final_output)} notes generated.")
                 
                 # Smooth transition to Studio
                 time.sleep(1.2)

@@ -179,8 +179,11 @@ def extract_slide_text_ai(image_paths: list[str], api_key: str, models_to_try: l
     
     for i in range(0, total_images, BATCH_SIZE):
         batch_paths = image_paths[i:i + BATCH_SIZE]
+        pct = i / total_images
+        start_page = i + 1
+        end_page   = min(i + BATCH_SIZE, total_images)
         if progress_cb:
-            progress_cb(i / total_images, f"👁️ AI reading slides {i+1} to {min(i+BATCH_SIZE, total_images)}...")
+            progress_cb(pct, f"👁️ AI reading slides {start_page} to {end_page} (out of {total_images} total)...")
             
         # Load images for Gemini
         images = [Image.open(p) for p in batch_paths]

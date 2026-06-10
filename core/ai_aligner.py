@@ -231,6 +231,7 @@ def align_transcript_to_slides(
     # ── Split transcript into chunks ──────────────────────────────────────────
     chunks = _chunk_segments(segments)
     total  = len(chunks)
+    total_minutes = _fmt_seconds(segments[-1].end) if segments else "00:00"
 
     if progress_cb:
         progress_cb(0.0, f"Starting alignment — {total} chunk(s) to process…")
@@ -241,10 +242,11 @@ def align_transcript_to_slides(
     for idx, chunk in enumerate(chunks):
         chunk_start = chunk[0].start
         chunk_end   = chunk[-1].end
-        chunk_label = f"Chunk {idx + 1}/{total} ({_fmt_seconds(chunk_start)}–{_fmt_seconds(chunk_end)})"
+        pct = idx / total
+        chunk_label = f"🤖 Processing Chunk {idx + 1}/{total} ({_fmt_seconds(chunk_start)}–{_fmt_seconds(chunk_end)} out of {total_minutes} total)"
 
         if progress_cb:
-            progress_cb(idx / total, f"🤖 Processing {chunk_label}…")
+            progress_cb(pct, chunk_label)
 
         chunk_transcript = _format_chunk_for_prompt(chunk)
         prompt           = _build_prompt(slides_text, chunk_transcript, previous_context_text)

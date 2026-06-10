@@ -21,12 +21,12 @@ def settings_modal():
     # 3. PDF Engine
     pdf_opts = ["Native (PyMuPDF) - Fast", "AI Vision (Gemini) - High Accuracy"]
     pdf_idx = pdf_opts.index(st.session_state.get("pdf_engine", pdf_opts[0])) if st.session_state.get("pdf_engine") in pdf_opts else 0
-    new_pdf_engine = st.selectbox("PDF Engine", pdf_opts, index=pdf_idx)
-    
+    new_pdf_engine = st.selectbox("1. Slide Extraction Engine", pdf_opts, index=pdf_idx)
+
     # 4. Audio Transcription
     tx_opts = ["Local Whisper (CPU) - Private", "AI Audio (Gemini) - Fast/Cloud"]
     tx_idx = tx_opts.index(st.session_state.get("tx_engine", tx_opts[0])) if st.session_state.get("tx_engine") in tx_opts else 0
-    new_tx_engine = st.selectbox("Audio Transcription", tx_opts, index=tx_idx)
+    new_tx_engine = st.selectbox("2. Audio Transcription Engine", tx_opts, index=tx_idx)
     
     if st.button("Save & Close", use_container_width=True, type="primary"):
         st.session_state.is_paid_api = new_is_paid
