@@ -123,3 +123,22 @@ def step_badge(label: str, status: str) -> str:
     c = css.get(status, "step-pending")
     i = icon.get(status, "○")
     return f'<span class="step-badge {c}">{i} {label}</span>'
+
+
+def render_library_card(session_info: dict, key_suffix: str) -> bool:
+    """Render a card for a saved session in the library. Returns True if clicked."""
+    import time
+    name = session_info.get("name", "Untitled")
+    desc = session_info.get("description", "")
+    if not desc:
+        desc = "No description provided."
+        
+    ts = session_info.get("timestamp", 0)
+    dt_str = time.strftime("%b %d, %Y", time.localtime(ts))
+    
+    with st.container(border=True):
+        st.markdown(f"<h4 style='margin-top: 0.5rem;'>📝 {name}</h4>", unsafe_allow_html=True)
+        st.caption(f"📅 Edited: {dt_str}")
+        st.markdown(f"<div style='min-height: 45px; font-size: 0.95rem; color: #8b949e;'>{desc}</div>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        return st.button("Open Session", key=f"load_btn_{key_suffix}", type="primary", use_container_width=True)
