@@ -244,8 +244,118 @@ def view_upload():
                         run_pipeline_clicked = True
 
     if run_pipeline_clicked:
-        # We trigger Phase 5 Pipeline Execution here
-        pass # <-- PHASE 5 HOOK
+        upload_ui_placeholder.empty() # BOOM. The old page is deleted from the DOM instantly.
+        
+        with st.container():
+            st.markdown("<br><br><div class='hero-title' style='font-size: 2.5rem;'>🤖 Analyzing Lecture...</div>", unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            _, col_proc, _ = st.columns([1, 2, 1])
+            with col_proc:
+                with st.container(border=True):
+                    st.write("🎙️ Transcribing Audio...")
+                    p1 = st.progress(0.0)
+                    lbl1 = st.empty()
+                    
+                    st.write("📄 Extracting Text from Slides...")
+                    p2 = st.progress(0.0)
+                    lbl2 = st.empty()
+                    
+                    st.write("🧠 Aligning Insights using Gemini...")
+                    p3 = st.progress(0.0)
+                    lbl3 = st.empty()
+                    
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    if st.button("Cancel / Restart", use_container_width=True):
+                        change_step("home")
+                        st.rerun()
+
+            # ── Execute Real Backend Logic ──
+            try:
+                temp_dir = get_or_create_temp_dir()
+                api_key = st.session_state.api_key
+                is_paid_api = st.session_state.get("is_paid_api", False)
+                
+                # Retrieve actual model ID from the UI label
+                from core.llm_service import DEFAULT_MODEL_OPTIONS
+                model_label = st.session_state.get("selected_model_label", list(DEFAULT_MODEL_OPTIONS.keys())[0])
+                selected_model = DEFAULT_MODEL_OPTIONS.get(model_label, "gemini-3.5-flash")
+                
+                # Dynamic discovery (done inline here instead of in the sidebar)
+                discovered_models = st.session_state.get("discovered_models", [])
+                if is_paid_api and not discovered_models:
+                    try:
+                        discovered_models = discover_available_models(api_key)
+                        st.session_state.discovered_models = discovered_models
+                    except Exception:
+                        pass
+                        
+                models_to_try = [selected_model] if selected_model else []
+                for m in discovered_models:
+                    if m not in models_to_try: models_to_try.append(m)
+                for m in GEMINI_MODEL_PRIORITY:
+                    if m not in models_to_try: models_to_try.append(m)
+
+                # --- STAGE 1: AUDIO ---
+                def audio_cb(frac, msg): 
+                    p1.progress(min(max(frac, 0.0), 1.0))
+                    lbl1.caption(msg)
+                    
+                engine = "ai" if "AI Audio" in st.session_state.tx_engine else "local"
+                st.session_state.transcript_segments = process_media_file(
+                    st.session_state.media_path, temp_dir,
+                    engine=engine, api_key=api_key, models_to_try=models_to_try, is_paid=is_paid_api, progress_cb=audio_cb
+                )
+                p1.progress(1.0)
+                lbl1.caption(f"✅ {len(st.session_state.transcript_segments)} segments transcribed.")
+
+                # --- STAGE 2: PDF ---
+                def pdf_cb(frac, msg): 
+                    p2.progress(min(max(frac, 0.0), 1.0))
+                    lbl2.caption(msg)
+                    
+                pdf_cb(0.1, "🎨 Rendering slide pages to crisp images...")
+                img_dir = os.path.join(temp_dir, "slide_images")
+                st.session_state.slide_images = render_pdf_to_images(st.session_state.pdf_path, img_dir)
+                st.session_state.active_slide = 1
+
+                if "Native" in st.session_state.pdf_engine:
+                    pdf_cb(0.5, "📄 Extracting text natively...")
+                    slides = extract_slide_text(st.session_state.pdf_path)
+                    empty_count = sum(1 for s in slides if "(No text found" in s["text"])
+                    if empty_count > 0:
+                        st.warning(f"⚠️ {empty_count} slides had no readable text. If alignment fails, switch 'Slide Extraction' to 'AI Vision' in Settings.")
+                else:
+                    slides = extract_slide_text_ai(st.session_state.slide_images, api_key, models_to_try, is_paid=is_paid_api, progress_cb=pdf_cb)
+                
+                st.session_state.slides = slides
+                p2.progress(1.0)
+                lbl2.caption(f"✅ {len(slides)} slides processed.")
+
+                # --- STAGE 3: AI ALIGNMENT ---
+                def align_cb(frac, msg): 
+                    p3.progress(min(max(frac, 0.0), 1.0))
+                    lbl3.caption(msg)
+                
+                final_output = align_transcript_to_slides(
+                    segments    = st.session_state.transcript_segments,
+                    slides      = st.session_state.slides,
+                    api_key     = api_key,
+                    model_name  = selected_model,
+                    is_paid     = is_paid_api,
+                    progress_cb = align_cb,
+                )
+                st.session_state.final_output = final_output
+                p3.progress(1.0)
+                lbl3.caption(f"✅ Pipeline complete! {len(final_output)} notes generated.")
+                
+                # Smooth transition to Studio
+                time.sleep(1.2)
+                change_step("studio")
+                st.rerun()
+
+            except Exception as e:
+                st.error(f"❌ Pipeline Failed: {e}")
 
 
 def view_studio():
