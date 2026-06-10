@@ -48,6 +48,7 @@ def save_session(session_data: LectureSession, temp_dir: str = None) -> str:
 
     metadata = {
         "session_name"        : session_data.session_name,
+        "session_description" : session_data.session_description,
         "session_id"          : session_id,
         "pdf_path"            : saved_pdf_path,
         "media_path"          : saved_media_path,
@@ -81,6 +82,7 @@ def list_saved_sessions() -> list[dict]:
                     data = json.load(file)
                     sessions.append({
                         "name": data.get("session_name", f),
+                        "description": data.get("session_description", ""),
                         "id": data.get("session_id"),
                         "filename": f,
                         "timestamp": data.get("timestamp", 0)
@@ -110,6 +112,7 @@ def load_session(filename: str) -> LectureSession:
             
     return LectureSession(
         session_name=data.get("session_name", "Untitled"),
+        session_description=data.get("session_description"),
         session_id=data.get("session_id"),
         pdf_path=data.get("pdf_path"),
         media_path=data.get("media_path"),

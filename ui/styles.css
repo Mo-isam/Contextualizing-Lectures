@@ -10,6 +10,42 @@ html, body, [class*="css"] {
   color: #c9d1d9;
 }
 
+/* Hide top header and reduce whitespace for SPA feel */
+header {visibility: hidden;}
+.block-container {padding-top: 2rem !important; max-width: 1200px;}
+
+/* Elegant Gradient Title */
+.hero-title {
+    font-size: 3.2rem !important;
+    font-weight: 800 !important;
+    background: linear-gradient(135deg, #4a90e2, #9b6dff, #64b0ff) !important;
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+    text-align: center;
+    margin-bottom: 0px;
+    padding-bottom: 0px;
+    line-height: 1.2;
+}
+
+.hero-subtitle {
+    text-align: center;
+    color: #8b949e;
+    font-size: 1.1rem;
+    margin-top: 8px;
+    margin-bottom: 3rem;
+    opacity: 0.85;
+}
+
+/* Card description styles */
+.card-description {
+    text-align: center;
+    color: #8b949e;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    margin-bottom: 1.5rem;
+    opacity: 0.8;
+}
+
 /* ── Sidebar ──────────────────────────────────────────────────────────── */
 [data-testid="stSidebar"] {
   background: linear-gradient(180deg, #161b22 0%, #0d1117 100%) !important;
@@ -186,18 +222,31 @@ html, body, [class*="css"] {
 }
 
 /* ── Streamlit button overrides ───────────────────────────────────────── */
-.stButton > button {
-  background: linear-gradient(135deg, #1f6feb, #388bfd) !important;
-  border: none !important;
-  border-radius: 8px !important;
-  color: white !important;
-  font-weight: 600 !important;
-  transition: all 0.2s ease !important;
+/* Primary Buttons */
+.stButton button[kind="primary"] {
+    background: linear-gradient(135deg, #1f6feb, #388bfd) !important;
+    border: none !important;
+    color: white !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    transition: all 0.2s ease !important;
 }
 
-.stButton > button:hover {
-  box-shadow: 0 4px 20px rgba(56,139,253,0.4) !important;
-  transform: translateY(-1px) !important;
+/* Secondary Buttons */
+.stButton button[kind="secondary"] {
+    background: rgba(120, 120, 120, 0.08) !important;
+    border: 1px solid rgba(100,160,255,0.2) !important;
+    color: #c9d1d9 !important;
+    border-radius: 8px !important;
+    font-weight: 500 !important;
+    transition: all 0.2s ease !important;
+}
+
+/* Hover effects for all buttons */
+.stButton button:hover {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 12px rgba(56,139,253,0.25) !important;
+    border-color: rgba(100,160,255,0.4) !important;
 }
 
 /* ── Divider ──────────────────────────────────────────────────────────── */

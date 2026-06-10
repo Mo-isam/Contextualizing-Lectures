@@ -43,5 +43,6 @@ class LectureSession:
     transcript_segments: list[TranscriptSegment] | None
     slides: list[Slide] | None
     final_output: list[AlignedNote] | None
+    session_description: str | None = None
     session_id: str | None = None
     timestamp: float = 0.0
