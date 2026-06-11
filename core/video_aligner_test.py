@@ -4,7 +4,11 @@ video_aligner_test.py
 Standalone script to test the Visual-Audio Fusion Pipeline.
 """
 
+import sys
 import os
+# Inject the root project directory into Python's path so 'core' imports work
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import cv2
 import logging
 from skimage.metrics import structural_similarity as ssim
