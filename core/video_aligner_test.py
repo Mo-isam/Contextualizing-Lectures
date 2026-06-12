@@ -11,6 +11,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import cv2
 import logging
+import numpy as np
 from skimage.metrics import structural_similarity as ssim
 
 from core.config import app_config
@@ -104,15 +105,38 @@ def extract_and_detect_transitions(video_path: str, output_dir: str) -> list[dic
 
 # ── Phase 3: Slide Matching ──────────────────────────────────────────
 
-def _get_orb_matches(des1, des2):
-    """Calculate the number of good feature matches between two images using ORB."""
-    if des1 is None or des2 is None or len(des1) == 0 or len(des2) == 0:
+def _get_orb_matches(kp1, des1, kp2, des2):
+    """Calculate spatially verified feature matches using Lowe's Ratio and RANSAC."""
+    if des1 is None or des2 is None or len(des1) < 2 or len(des2) < 2:
         return 0
-    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-    matches = bf.match(des1, des2)
-    # Filter by distance to keep only high-quality matches
-    good_matches = [m for m in matches if m.distance < 50]
-    return len(good_matches)
+        
+    # Use k-Nearest Neighbors (k=2) instead of crossCheck
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING)
+    matches = bf.knnMatch(des1, des2, k=2)
+    
+    # 1. Lowe's Ratio Test: Keep matches that are distinct and unambiguous
+    good_matches = []
+    for match_set in matches:
+        if len(match_set) == 2:
+            m, n = match_set
+            if m.distance < 0.75 * n.distance:
+                good_matches.append(m)
+                
+    # 2. Spatial Verification (RANSAC)
+    if len(good_matches) < 10:
+        return 0 # Not enough points to verify geometry
+        
+    src_pts = np.float32([ kp1[m.queryIdx].pt for m in good_matches ]).reshape(-1, 1, 2)
+    dst_pts = np.float32([ kp2[m.trainIdx].pt for m in good_matches ]).reshape(-1, 1, 2)
+    
+    # Find geometric transformation; mask contains the 'inliers' (points that physically align)
+    _, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
+    
+    if mask is None:
+        return 0
+        
+    # Return the count of points that survived spatial verification
+    return int(np.sum(mask))
 
 
 def match_keyframes_to_slides(keyframes: list[dict], slide_images: list[str], slides_text: str, api_key: str = "") -> list[dict]:
@@ -127,19 +151,21 @@ def match_keyframes_to_slides(keyframes: list[dict], slide_images: list[str], sl
     strategy = app_config.get("video", "matching_strategy", "hybrid")
     logger.info(f"Starting slide matching using strategy: '{strategy}'")
     
-    MIN_MATCH_COUNT = 25 # Threshold for a confident ORB match
+    # Lowered threshold because RANSAC inliers are highly accurate
+    MIN_MATCH_COUNT = 15 
     
-    # 1. Pre-compute ORB features for all PDF slides if using CV
-    slide_descriptors = []
+    # 1. Pre-compute ORB features (keypoints AND descriptors) for all PDF slides
+    slide_features = []
     if strategy in ["cv", "hybrid"]:
-        orb = cv2.ORB_create(nfeatures=2000)
+        # Increased feature count to give ORB more data to work with
+        orb = cv2.ORB_create(nfeatures=5000)
         for img_path in slide_images:
             img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
             if img is not None:
-                _, des = orb.detectAndCompute(img, None)
-                slide_descriptors.append(des)
+                kp, des = orb.detectAndCompute(img, None)
+                slide_features.append({"kp": kp, "des": des})
             else:
-                slide_descriptors.append(None)
+                slide_features.append(None)
                 
     last_matched_idx = 0 # Start at Slide 1 (index 0)
     
@@ -150,14 +176,18 @@ def match_keyframes_to_slides(keyframes: list[dict], slide_images: list[str], sl
         # --- STRATEGY: CV or HYBRID ---
         if strategy in ["cv", "hybrid"]:
             kf_img = cv2.imread(kf_path, cv2.IMREAD_GRAYSCALE)
-            _, kf_des = orb.detectAndCompute(kf_img, None)
+            kf_kp, kf_des = orb.detectAndCompute(kf_img, None)
             
             best_match_count = -1
             best_idx = -1
             
             # BRUTE FORCE: Compare against all slides to find the absolute maximum matches
-            for idx in range(len(slide_descriptors)):
-                matches = _get_orb_matches(kf_des, slide_descriptors[idx])
+            for idx in range(len(slide_features)):
+                sf = slide_features[idx]
+                if sf is None or sf["des"] is None:
+                    continue
+                    
+                matches = _get_orb_matches(kf_kp, kf_des, sf["kp"], sf["des"])
                 if matches > best_match_count:
                     best_match_count = matches
                     best_idx = idx
