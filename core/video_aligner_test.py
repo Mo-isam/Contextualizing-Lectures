@@ -152,39 +152,22 @@ def match_keyframes_to_slides(keyframes: list[dict], slide_images: list[str], sl
             kf_img = cv2.imread(kf_path, cv2.IMREAD_GRAYSCALE)
             _, kf_des = orb.detectAndCompute(kf_img, None)
             
-            # Tier 1: Expanding Radius (Current, Next, Previous)
-            tier_1_indices = [
-                last_matched_idx, 
-                min(last_matched_idx + 1, len(slide_descriptors) - 1),
-                max(last_matched_idx - 1, 0)
-            ]
-            tier_1_indices = list(set(tier_1_indices)) # Remove duplicates
-            
             best_match_count = -1
             best_idx = -1
             
-            for idx in tier_1_indices:
+            # BRUTE FORCE: Compare against all slides to find the absolute maximum matches
+            for idx in range(len(slide_descriptors)):
                 matches = _get_orb_matches(kf_des, slide_descriptors[idx])
                 if matches > best_match_count:
                     best_match_count = matches
                     best_idx = idx
             
+            # We only accept the match if it beats the minimum threshold
             if best_match_count >= MIN_MATCH_COUNT:
                 matched_slide_num = best_idx + 1
-                logger.info(f"CV Tier 1 Match: Keyframe {kf_path} -> Slide {matched_slide_num} ({best_match_count} matches)")
+                logger.info(f"CV Match: Keyframe {os.path.basename(kf_path)} -> Slide {matched_slide_num} (Score: {best_match_count} matches)")
             else:
-                # Tier 2: Full Search (Check all other slides)
-                logger.info(f"CV Tier 1 failed for {kf_path}. Executing Tier 2 Full Search...")
-                for idx in range(len(slide_descriptors)):
-                    if idx in tier_1_indices: continue # Skip already checked
-                    matches = _get_orb_matches(kf_des, slide_descriptors[idx])
-                    if matches > best_match_count:
-                        best_match_count = matches
-                        best_idx = idx
-                
-                if best_match_count >= MIN_MATCH_COUNT:
-                    matched_slide_num = best_idx + 1
-                    logger.info(f"CV Tier 2 Match: Keyframe {kf_path} -> Slide {matched_slide_num} ({best_match_count} matches)")
+                logger.warning(f"CV Failed for {os.path.basename(kf_path)}. Best score was only {best_match_count}.")
         
         # --- STRATEGY: AI FALLBACK or PURE AI ---
         if matched_slide_num is None:
@@ -341,7 +324,7 @@ if __name__ == "__main__":
     # 1. Place 'test_video.mp4' and 'test_presentation.pdf' in your root folder.
     # 2. Add your GEMINI API KEY below to test the full hybrid matching + insights.
     
-    API_KEY = "" # <-- PUT YOUR API KEY HERE FOR TESTING
+    API_KEY = "AIzaSyAiJJ1D_cypCnlrrQj0PmvM3ZSrNmMzmvU" # <-- PUT YOUR API KEY HERE FOR TESTING
     
     ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
     TEST_VIDEO = os.path.join(ROOT_DIR, "test_video.mp4")
@@ -366,18 +349,15 @@ if __name__ == "__main__":
             print(f"[{chap['start_time']}s - {chap['end_time']}s] -> Slide {chap['matched_slide']}")
             
         print("\n--- 4. TRANSCRIBING AUDIO ---")
-        # For testing, we use the local Whisper engine
-        segments = process_media_file(TEST_VIDEO, temp_dir=TEST_OUT_DIR, engine="local")
+        print("⏭️ Skipped for CV testing phase.")
+        # segments = process_media_file(TEST_VIDEO, temp_dir=TEST_OUT_DIR, engine="local")
         
         print("\n--- 5. FUSING PIPELINE ---")
-        notes = fuse_audio_and_video(segments, chapters, slides, api_key=API_KEY)
+        print("⏭️ Skipped for CV testing phase.")
+        # notes = fuse_audio_and_video(segments, chapters, slides, api_key=API_KEY)
         
         print("\n--- FINAL OUTPUT ---")
-        for note in notes:
-            print(f"Slide {note.slide_number}: {note.slide_title} ({note.timestamp_start}s -> {note.timestamp_end}s)")
-            if note.ai_insight:
-                print(f"  Insight: {note.ai_insight}")
-            print(f"  Transcript: {note.exact_transcript[:100]}...\n")
+        print("Done testing Phase 3.")
             
     else:
         logger.warning("Missing 'test_video.mp4' or 'test_presentation.pdf' in the root directory. Add them to run the full test.")
