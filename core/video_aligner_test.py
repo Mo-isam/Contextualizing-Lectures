@@ -235,18 +235,149 @@ def match_keyframes_to_slides(keyframes: list[dict], slide_images: list[str], sl
     return keyframes
 
 
+# ── Phase 4 & 5: Deterministic Fusion & AI Insights ──────────────────
+
+def fuse_audio_and_video(
+    segments: list, 
+    keyframes: list[dict], 
+    slides: list, 
+    api_key: str = ""
+) -> list:
+    """
+    Phase 4: Mathematically aligns audio segments to visual chapters using midpoints.
+    Phase 5: Generates a single AI insight per slide block.
+    Returns a list of AlignedNote objects.
+    """
+    from core.models import AlignedNote
+    from core.llm_service import generate_content_with_fallback
+    import json
+
+    logger.info("Starting deterministic Audio-Visual Fusion...")
+    
+    # 1. Assign each segment to a slide based on its temporal midpoint
+    blocks = []
+    current_block = {"slide_number": -1, "segments": []}
+    
+    for seg in segments:
+        midpoint = (seg.start + seg.end) / 2.0
+        
+        # Find which keyframe chapter this midpoint falls into
+        matched_slide = 0 # Default to General
+        for kf in keyframes:
+            if kf["start_time"] <= midpoint <= kf["end_time"]:
+                matched_slide = kf["matched_slide"]
+                break
+        
+        # If the slide changed, start a new block
+        if matched_slide != current_block["slide_number"]:
+            if current_block["segments"]:
+                blocks.append(current_block)
+            current_block = {"slide_number": matched_slide, "segments": [seg]}
+        else:
+            current_block["segments"].append(seg)
+            
+    if current_block["segments"]:
+        blocks.append(current_block)
+
+    # 2. Build final notes and generate AI Insights
+    final_notes = []
+    slide_dict = {s.page_number: s for s in slides}
+    
+    for block in blocks:
+        s_num = block["slide_number"]
+        block_segs = block["segments"]
+        
+        t_start = block_segs[0].start
+        t_end = block_segs[-1].end
+        exact_transcript = " ".join([s.text for s in block_segs]).strip()
+        
+        slide_title = slide_dict[s_num].title if s_num in slide_dict else "General / Off-topic"
+        slide_text = slide_dict[s_num].text if s_num in slide_dict else ""
+        
+        ai_insight = ""
+        # Only call AI if we have transcript text and an API key
+        if api_key and exact_transcript and s_num > 0:
+            logger.info(f"Generating AI Insight for Slide {s_num}...")
+            schema = {
+                "type": "OBJECT",
+                "properties": {"ai_insight": {"type": "STRING"}},
+                "required": ["ai_insight"]
+            }
+            prompt = (
+                "You are a lecture assistant. Compare the SLIDE TEXT to the PROFESSOR TRANSCRIPT.\n"
+                "Summarize any important points the professor said that are NOT written on the slide.\n"
+                "Keep it to 1-2 concise sentences. If the professor just read the slide exactly, output an empty string.\n\n"
+                f"--- SLIDE TEXT ---\n{slide_text}\n\n"
+                f"--- PROFESSOR TRANSCRIPT ---\n{exact_transcript}"
+            )
+            try:
+                response = generate_content_with_fallback(
+                    contents=[prompt],
+                    models_to_try=["gemini-2.5-flash", "gemini-3.5-flash"],
+                    api_key=api_key,
+                    schema=schema,
+                    max_retries=2
+                )
+                ai_insight = json.loads(response).get("ai_insight", "").strip()
+            except Exception as e:
+                logger.error(f"Failed to generate insight for slide {s_num}: {e}")
+                
+        final_notes.append(AlignedNote(
+            slide_number=s_num,
+            slide_title=slide_title,
+            exact_transcript=exact_transcript,
+            ai_insight=ai_insight,
+            timestamp_start=t_start,
+            timestamp_end=t_end
+        ))
+        
+    logger.info(f"Fusion complete. Generated {len(final_notes)} aligned notes.")
+    return final_notes
+
+
 if __name__ == "__main__":
     # --- TESTING PLAYGROUND ---
-    # To test this, place a short lecture video in your root folder
-    # named 'test_video.mp4' and run this script directly.
+    # Instructions:
+    # 1. Place 'test_video.mp4' and 'test_presentation.pdf' in your root folder.
+    # 2. Add your GEMINI API KEY below to test the full hybrid matching + insights.
+    
+    API_KEY = "" # <-- PUT YOUR API KEY HERE FOR TESTING
     
     ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
     TEST_VIDEO = os.path.join(ROOT_DIR, "test_video.mp4")
+    TEST_PDF = os.path.join(ROOT_DIR, "test_presentation.pdf")
     TEST_OUT_DIR = os.path.join(ROOT_DIR, "data_storage", "tmp", "video_test_frames")
     
-    if os.path.exists(TEST_VIDEO):
+    if os.path.exists(TEST_VIDEO) and os.path.exists(TEST_PDF):
+        from core.pdf_processor import render_pdf_to_images, extract_slide_text, format_slides_for_prompt
+        from core.audio_processor import process_media_file
+        
+        print("\n--- 1. PROCESSING PDF ---")
+        slide_images = render_pdf_to_images(TEST_PDF, os.path.join(TEST_OUT_DIR, "pdf_images"))
+        slides = extract_slide_text(TEST_PDF)
+        slides_text = format_slides_for_prompt(slides)
+        
+        print("\n--- 2. EXTRACTING VIDEO FRAMES & DETECTING CUTS ---")
         chapters = extract_and_detect_transitions(TEST_VIDEO, TEST_OUT_DIR)
-        for idx, chap in enumerate(chapters):
-            print(f"Chapter {idx+1}: {chap['start_time']:.1f}s -> {chap['end_time']:.1f}s | File: {chap['keyframe_path']}")
+        
+        print("\n--- 3. MATCHING KEYFRAMES TO SLIDES ---")
+        chapters = match_keyframes_to_slides(chapters, slide_images, slides_text, api_key=API_KEY)
+        for chap in chapters:
+            print(f"[{chap['start_time']}s - {chap['end_time']}s] -> Slide {chap['matched_slide']}")
+            
+        print("\n--- 4. TRANSCRIBING AUDIO ---")
+        # For testing, we use the local Whisper engine
+        segments = process_media_file(TEST_VIDEO, temp_dir=TEST_OUT_DIR, engine="local")
+        
+        print("\n--- 5. FUSING PIPELINE ---")
+        notes = fuse_audio_and_video(segments, chapters, slides, api_key=API_KEY)
+        
+        print("\n--- FINAL OUTPUT ---")
+        for note in notes:
+            print(f"Slide {note.slide_number}: {note.slide_title} ({note.timestamp_start}s -> {note.timestamp_end}s)")
+            if note.ai_insight:
+                print(f"  Insight: {note.ai_insight}")
+            print(f"  Transcript: {note.exact_transcript[:100]}...\n")
+            
     else:
-        logger.warning(f"No test video found at {TEST_VIDEO}. Please add one to test Phase 1 & 2.")
+        logger.warning("Missing 'test_video.mp4' or 'test_presentation.pdf' in the root directory. Add them to run the full test.")
