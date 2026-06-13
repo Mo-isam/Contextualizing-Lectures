@@ -170,18 +170,16 @@ def match_keyframes_to_slides(keyframes: list[dict], slide_images: list[str], sl
                 
     last_matched_idx = 0 # Start at Slide 1 (index 0)
     
+    # PASS 1: Detect confident CV matches
     for kf in keyframes:
         kf_path = kf["keyframe_path"]
-        matched_slide_num = None
+        kf["matched_slide"] = None
         
-        # --- STRATEGY: CV or HYBRID ---
         if strategy in ["cv", "hybrid"]:
             kf_img = cv2.imread(kf_path, cv2.IMREAD_GRAYSCALE)
             kf_kp, kf_des = orb.detectAndCompute(kf_img, None)
             
             match_scores = []
-            
-            # BRUTE FORCE: Score against all slides
             for idx in range(len(slide_features)):
                 sf = slide_features[idx]
                 if sf is None or sf["des"] is None:
@@ -191,40 +189,46 @@ def match_keyframes_to_slides(keyframes: list[dict], slide_images: list[str], sl
                 matches = _get_orb_matches(kf_kp, kf_des, sf["kp"], sf["des"])
                 match_scores.append((idx, matches))
                 
-            # Sort scores highest to lowest to find 1st and 2nd place
             match_scores.sort(key=lambda x: x[1], reverse=True)
             
             best_idx, best_score = match_scores[0]
             runner_up_score = match_scores[1][1] if len(match_scores) > 1 else 0
             
-            # RELATIVE CONFIDENCE LOGIC
             is_confident_match = False
-            
-            # Rule 1: High absolute match (e.g., full text slide)
             if best_score >= 15:
                 is_confident_match = True
-            # Rule 2: Sparse slide (e.g., 1 bullet point), but massive lead over 2nd place (ratio test)
             elif best_score >= 5 and best_score >= (runner_up_score * 1.5):
                 is_confident_match = True
                 
             if is_confident_match:
-                matched_slide_num = best_idx + 1
-                logger.info(f"CV Match: Keyframe {os.path.basename(kf_path)} -> Slide {matched_slide_num} (Score: {best_score}, Runner-up: {runner_up_score})")
+                kf["matched_slide"] = best_idx + 1
+                logger.info(f"CV Match: {os.path.basename(kf_path)} -> Slide {kf['matched_slide']} (Score: {best_score}, Runner-up: {runner_up_score})")
             else:
-                logger.warning(f"CV Failed for {os.path.basename(kf_path)}. Score: {best_score}, Runner-up: {runner_up_score}.")
-        
-        # --- STRATEGY: AI FALLBACK or PURE AI ---
-        if matched_slide_num is None:
-            if strategy == "cv":
-                # Strict CV mode: if it fails, map to 0 (General)
-                matched_slide_num = 0
-                logger.warning(f"CV failed for {kf_path}. Strict CV mode mapping to Slide 0.")
-            elif strategy in ["hybrid", "ai"]:
-                if not api_key:
-                    logger.error("API Key missing! Cannot run AI matching. Defaulting to Slide 0.")
-                    matched_slide_num = 0
-                else:
-                    logger.info(f"Triggering AI Matching for {kf_path}...")
+                logger.warning(f"CV Weak Match: {os.path.basename(kf_path)}. Score: {best_score}, Runner-up: {runner_up_score}. Tagged for smoothing.")
+
+    # PASS 2: Temporal Smoothing (Back-fill) & AI Fallback
+    logger.info("Starting Pass 2: Temporal Smoothing & AI Fallback...")
+    for i, kf in enumerate(keyframes):
+        if kf["matched_slide"] is None:
+            kf_path = kf["keyframe_path"]
+            
+            # Look ahead to find the next confident slide
+            next_match = None
+            gap_size = 0
+            for j in range(i, len(keyframes)):
+                if keyframes[j].get("matched_slide") is not None:
+                    next_match = keyframes[j]["matched_slide"]
+                    break
+                gap_size += 1
+
+            # If the gap is small (<= 2), we assume it's a build-up to the next confident slide
+            if next_match is not None and gap_size <= 2:
+                kf["matched_slide"] = next_match
+                logger.info(f"Temporal Smoothing: Back-filled {os.path.basename(kf_path)} -> Slide {next_match}")
+            else:
+                # True Anomaly or long gap: Trigger AI Fallback (if enabled)
+                if strategy in ["hybrid", "ai"] and api_key:
+                    logger.info(f"Triggering AI Matching for anomaly {os.path.basename(kf_path)} (Gap size: {gap_size})...")
                     schema = {
                         "type": "OBJECT",
                         "properties": {"slide_number": {"type": "INTEGER"}},
@@ -237,7 +241,6 @@ def match_keyframes_to_slides(keyframes: list[dict], slide_images: list[str], sl
                         "If yes, return the slide_number. If the video frame shows a web browser, "
                         "a person, or something entirely unrelated to the presentation, return 0."
                     )
-                    
                     try:
                         img_obj = Image.open(kf_path)
                         response_text = generate_content_with_fallback(
@@ -248,17 +251,15 @@ def match_keyframes_to_slides(keyframes: list[dict], slide_images: list[str], sl
                             max_retries=2
                         )
                         data = json.loads(response_text)
-                        matched_slide_num = data.get("slide_number", 0)
-                        logger.info(f"AI Match: Keyframe {kf_path} -> Slide {matched_slide_num}")
+                        kf["matched_slide"] = data.get("slide_number", 0)
+                        logger.info(f"AI Match: {os.path.basename(kf_path)} -> Slide {kf['matched_slide']}")
                     except Exception as e:
-                        logger.error(f"AI Fallback failed for {kf_path}: {e}")
-                        matched_slide_num = 0
-        
-        # Save result
-        kf["matched_slide"] = matched_slide_num
-        if matched_slide_num > 0:
-            last_matched_idx = matched_slide_num - 1 # Update radius center
-            
+                        logger.error(f"AI Fallback failed for {os.path.basename(kf_path)}: {e}")
+                        kf["matched_slide"] = 0
+                else:
+                    kf["matched_slide"] = 0
+                    logger.warning(f"No AI available for anomaly {os.path.basename(kf_path)}. Defaulting to Slide 0.")
+
     return keyframes
 
 
