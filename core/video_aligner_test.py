@@ -195,9 +195,15 @@ def match_keyframes_to_slides(keyframes: list[dict], slide_images: list[str], sl
             runner_up_score = match_scores[1][1] if len(match_scores) > 1 else 0
             
             is_confident_match = False
-            if best_score >= 15:
+            
+            # Rule 1: Very high absolute match (unambiguous)
+            if best_score >= 20:
                 is_confident_match = True
-            elif best_score >= 5 and best_score >= (runner_up_score * 1.5):
+            # Rule 2: High match, but must beat runner-up to avoid ties (e.g., 16 vs 13 fails this)
+            elif best_score >= 15 and best_score >= (runner_up_score * 1.2):
+                is_confident_match = True
+            # Rule 3: Sparse slide, raised minimum to 8 verified corners, strict ratio over runner-up
+            elif best_score >= 8 and best_score >= (runner_up_score * 1.5):
                 is_confident_match = True
                 
             if is_confident_match:
@@ -394,15 +400,18 @@ if __name__ == "__main__":
             print(f"[{chap['start_time']}s - {chap['end_time']}s] -> Slide {chap['matched_slide']}")
             
         print("\n--- 4. TRANSCRIBING AUDIO ---")
-        print("⏭️ Skipped for CV testing phase.")
-        # segments = process_media_file(TEST_VIDEO, temp_dir=TEST_OUT_DIR, engine="local")
+        # For testing, we use the local Whisper engine
+        segments = process_media_file(TEST_VIDEO, temp_dir=TEST_OUT_DIR, engine="local")
         
         print("\n--- 5. FUSING PIPELINE ---")
-        print("⏭️ Skipped for CV testing phase.")
-        # notes = fuse_audio_and_video(segments, chapters, slides, api_key=API_KEY)
+        notes = fuse_audio_and_video(segments, chapters, slides, api_key=API_KEY)
         
         print("\n--- FINAL OUTPUT ---")
-        print("Done testing Phase 3.")
+        for note in notes:
+            print(f"Slide {note.slide_number}: {note.slide_title} ({note.timestamp_start}s -> {note.timestamp_end}s)")
+            if note.ai_insight:
+                print(f"  Insight: {note.ai_insight}")
+            print(f"  Transcript: {note.exact_transcript[:100]}...\n")
             
     else:
         logger.warning("Missing 'test_video.mp4' or 'test_presentation.pdf' in the root directory. Add them to run the full test.")
