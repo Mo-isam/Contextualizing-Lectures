@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # Constants from config
 FPS_SAMPLE_RATE = app_config.get("video", "frame_sample_rate", 1)
-SSIM_THRESHOLD = app_config.get("video", "ssim_threshold", 0.85)
+SSIM_THRESHOLD = app_config.get("video", "ssim_threshold", 0.90) # Increased sensitivity
 
 
 def extract_and_detect_transitions(video_path: str, output_dir: str) -> list[dict]:
@@ -55,8 +55,9 @@ def extract_and_detect_transitions(video_path: str, output_dir: str) -> list[dic
         if frame_count % frame_interval == 0:
             current_sec = frame_count / video_fps
             
-            # Convert to grayscale for SSIM comparison
+            # Convert to grayscale and apply Gaussian Blur to melt away noise/mouse movements
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            gray_blurred = cv2.GaussianBlur(gray, (11, 11), 0)
             
             # If this is the very first frame, it's our first chapter keyframe
             if prev_gray is None:
@@ -67,12 +68,12 @@ def extract_and_detect_transitions(video_path: str, output_dir: str) -> list[dic
                     "end_time": None, # Will be updated when the next cut happens
                     "keyframe_path": keyframe_path
                 })
-                prev_gray = gray
+                prev_gray = gray_blurred
             else:
-                # Compare current frame to previous frame
-                score, _ = ssim(prev_gray, gray, full=True)
+                # Compare current blurred frame to previous blurred frame
+                score, _ = ssim(prev_gray, gray_blurred, full=True)
                 
-                # If the score drops below threshold, we have a slide transition!
+                # If the score drops below threshold, we have a structural slide transition!
                 if score < SSIM_THRESHOLD:
                     logger.info(f"Transition detected at {current_sec:.2f}s (SSIM: {score:.3f})")
                     
@@ -89,7 +90,7 @@ def extract_and_detect_transitions(video_path: str, output_dir: str) -> list[dic
                     })
                     
                     # Update our reference frame to the new slide
-                    prev_gray = gray
+                    prev_gray = gray_blurred
                     
         frame_count += 1
 
@@ -178,26 +179,39 @@ def match_keyframes_to_slides(keyframes: list[dict], slide_images: list[str], sl
             kf_img = cv2.imread(kf_path, cv2.IMREAD_GRAYSCALE)
             kf_kp, kf_des = orb.detectAndCompute(kf_img, None)
             
-            best_match_count = -1
-            best_idx = -1
+            match_scores = []
             
-            # BRUTE FORCE: Compare against all slides to find the absolute maximum matches
+            # BRUTE FORCE: Score against all slides
             for idx in range(len(slide_features)):
                 sf = slide_features[idx]
                 if sf is None or sf["des"] is None:
+                    match_scores.append((idx, 0))
                     continue
                     
                 matches = _get_orb_matches(kf_kp, kf_des, sf["kp"], sf["des"])
-                if matches > best_match_count:
-                    best_match_count = matches
-                    best_idx = idx
+                match_scores.append((idx, matches))
+                
+            # Sort scores highest to lowest to find 1st and 2nd place
+            match_scores.sort(key=lambda x: x[1], reverse=True)
             
-            # We only accept the match if it beats the minimum threshold
-            if best_match_count >= MIN_MATCH_COUNT:
+            best_idx, best_score = match_scores[0]
+            runner_up_score = match_scores[1][1] if len(match_scores) > 1 else 0
+            
+            # RELATIVE CONFIDENCE LOGIC
+            is_confident_match = False
+            
+            # Rule 1: High absolute match (e.g., full text slide)
+            if best_score >= 15:
+                is_confident_match = True
+            # Rule 2: Sparse slide (e.g., 1 bullet point), but massive lead over 2nd place (ratio test)
+            elif best_score >= 5 and best_score >= (runner_up_score * 1.5):
+                is_confident_match = True
+                
+            if is_confident_match:
                 matched_slide_num = best_idx + 1
-                logger.info(f"CV Match: Keyframe {os.path.basename(kf_path)} -> Slide {matched_slide_num} (Score: {best_match_count} matches)")
+                logger.info(f"CV Match: Keyframe {os.path.basename(kf_path)} -> Slide {matched_slide_num} (Score: {best_score}, Runner-up: {runner_up_score})")
             else:
-                logger.warning(f"CV Failed for {os.path.basename(kf_path)}. Best score was only {best_match_count}.")
+                logger.warning(f"CV Failed for {os.path.basename(kf_path)}. Score: {best_score}, Runner-up: {runner_up_score}.")
         
         # --- STRATEGY: AI FALLBACK or PURE AI ---
         if matched_slide_num is None:
