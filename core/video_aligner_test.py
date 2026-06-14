@@ -200,7 +200,7 @@ def match_keyframes_to_slides(keyframes: list[dict], slide_images: list[str], sl
             if best_score >= 20:
                 is_confident_match = True
             # Rule 2: High match, but must beat runner-up to avoid ties (e.g., 16 vs 13 fails this)
-            elif best_score >= 15 and best_score >= (runner_up_score * 1.2):
+            elif best_score >= 15 and best_score >= (runner_up_score * 1.3):
                 is_confident_match = True
             # Rule 3: Sparse slide, raised minimum to 8 verified corners, strict ratio over runner-up
             elif best_score >= 8 and best_score >= (runner_up_score * 1.5):

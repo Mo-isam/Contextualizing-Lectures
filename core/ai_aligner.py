@@ -318,3 +318,119 @@ def align_transcript_to_slides(
         progress_cb(1.0, f"✅ Alignment complete — {len(all_results)} note(s) generated.")
 
     return all_results
+
+
+def align_video_to_slides(
+    segments: list[TranscriptSegment],
+    keyframes: list[dict],
+    slides: list[Slide],
+    api_key: str,
+    models_to_try: list[str],
+    is_paid: bool = False,
+    progress_cb = None
+) -> list[AlignedNote]:
+    """
+    Deterministic Audio-Visual Fusion.
+    Maps audio segments to slides based on precise visual timestamps,
+    then queries the LLM for a single concise insight per slide block.
+    """
+    if progress_cb: progress_cb(0.0, "🧮 Fusing audio transcripts to visual timeline...")
+    
+    # 1. Group segments into slide blocks based on temporal midpoint
+    blocks = []
+    current_block = {"slide_number": -1, "segments": []}
+    
+    for seg in segments:
+        midpoint = (seg.start + seg.end) / 2.0
+        
+        matched_slide = 0 # Default to General
+        for kf in keyframes:
+            # Safely handle the last keyframe if end_time is None
+            end_t = kf.get("end_time") or float('inf')
+            if kf["start_time"] <= midpoint <= end_t:
+                matched_slide = kf.get("matched_slide", 0)
+                break
+        
+        if matched_slide != current_block["slide_number"]:
+            if current_block["segments"]:
+                blocks.append(current_block)
+            current_block = {"slide_number": matched_slide, "segments": [seg]}
+        else:
+            current_block["segments"].append(seg)
+            
+    if current_block["segments"]:
+        blocks.append(current_block)
+
+    # 2. Build final notes and generate AI Insights
+    final_notes = []
+    slide_dict = {s.page_number: s for s in slides}
+    total_blocks = len(blocks)
+    
+    # Strict JSON Schema for insight
+    schema = {
+        "type": "OBJECT",
+        "properties": {"ai_insight": {"type": "STRING"}},
+        "required": ["ai_insight"]
+    }
+
+    for idx, block in enumerate(blocks):
+        s_num = block["slide_number"]
+        block_segs = block["segments"]
+        
+        t_start = block_segs[0].start
+        t_end = block_segs[-1].end
+        exact_transcript = " ".join([s.text for s in block_segs]).strip()
+        
+        slide_title = slide_dict[s_num].title if s_num in slide_dict else "General / Off-topic"
+        slide_text = slide_dict[s_num].text if s_num in slide_dict else ""
+        
+        ai_insight = ""
+        
+        # Only query LLM if there is text and it's an actual slide (>0)
+        if exact_transcript and s_num > 0 and api_key:
+            pct = idx / total_blocks
+            if progress_cb: progress_cb(pct, f"🧠 Generating insight for Slide {s_num}...")
+            
+            prompt = (
+                "You are an expert academic assistant specializing in lecture analysis. "
+                "Compare the SLIDE TEXT to the PROFESSOR TRANSCRIPT.\n\n"
+                "RULES:\n"
+                "1. If the professor explains something vital that is NOT written on the slide, summarize it in `ai_insight` (1-2 sentences).\n"
+                "2. If the professor just read the slide exactly or made minor off-topic remarks, return an empty string for `ai_insight`.\n\n"
+                f"--- SLIDE TEXT ---\n{slide_text}\n\n"
+                f"--- PROFESSOR TRANSCRIPT ---\n{exact_transcript}"
+            )
+            
+            try:
+                response_text = generate_content_with_fallback(
+                    contents=[prompt],
+                    models_to_try=models_to_try,
+                    api_key=api_key,
+                    schema=schema,
+                    temperature=0.0,
+                    is_paid=is_paid,
+                    log_context=f"insight for slide {s_num}",
+                    progress_cb=progress_cb,
+                    progress_idx=pct,
+                    max_retries=2
+                )
+                ai_insight = json.loads(response_text).get("ai_insight", "").strip()
+            except SafetyFilterError:
+                pass # Already logged by fallback service
+            except AllModelsFailedError:
+                pass # Already logged by fallback service
+            except Exception as e:
+                logger.error(f"Failed to generate insight for slide {s_num}: {e}")
+                
+        final_notes.append(AlignedNote(
+            slide_number=s_num,
+            slide_title=slide_title,
+            exact_transcript=exact_transcript,
+            ai_insight=ai_insight,
+            timestamp_start=t_start,
+            timestamp_end=t_end
+        ))
+        
+    if progress_cb: progress_cb(1.0, f"✅ Video alignment complete — {len(final_notes)} notes generated.")
+    
+    return final_notes
