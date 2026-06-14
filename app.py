@@ -26,7 +26,8 @@ import shutil
 from core.file_utils      import save_file, convert_pptx_to_pdf, SUPPORTED_MEDIA_EXT
 from core.audio_processor import process_media_file
 from core.pdf_processor   import extract_slide_text, get_pdf_info, render_pdf_to_images, extract_slide_text_ai
-from core.ai_aligner      import align_transcript_to_slides
+from core.ai_aligner      import align_transcript_to_slides, align_video_to_slides
+from core.video_processor import extract_and_detect_transitions, match_keyframes_to_slides
 from core.llm_service     import discover_available_models, GEMINI_MODEL_PRIORITY, DEFAULT_MODEL_OPTIONS
 from core.config          import app_config
 
@@ -215,6 +216,16 @@ def view_upload():
                 pdf_file = st.file_uploader("2. Upload Lecture Slides (PDF/PPTX)", type=["pdf", "pptx", "ppt"])
                 media_file = st.file_uploader("3. Upload Lecture Audio/Video", type=["mp4", "mp3", "wav"])
                 
+                pipeline_mode = "audio"
+                if media_file and media_file.name.lower().endswith(".mp4"):
+                    st.info("🎬 Video detected! You can use the new Visual Pipeline to precisely map audio to on-screen slides.")
+                    pipeline_mode = st.radio(
+                        "Select Pipeline Mode",
+                        options=["visual", "audio"],
+                        format_func=lambda x: "🎞️ Visual Pipeline (Deterministic & Fast)" if x == "visual" else "🎙️ Audio-Only Pipeline (Semantic AI)",
+                        horizontal=True
+                    )
+                
                 st.markdown("<br>", unsafe_allow_html=True)
                 
                 if st.button("Run Pipeline", type="primary", use_container_width=True):
@@ -240,6 +251,7 @@ def view_upload():
                         
                         # Media Handling
                         st.session_state.media_path = save_file(media_file.getbuffer(), media_file.name, FILES_DIR)
+                        st.session_state.pipeline_mode = pipeline_mode
                         
                         run_pipeline_clicked = True
 
@@ -256,6 +268,8 @@ def view_upload():
                              <span style='color:#58a6ff;'>{int(pct*100)}%</span>
                            </div>"""
 
+            is_visual = st.session_state.get("pipeline_mode") == "visual"
+
             _, col_proc, _ = st.columns([1, 2, 1])
             with col_proc:
                 with st.container(border=True):
@@ -265,6 +279,13 @@ def view_upload():
                     lbl1 = st.empty()
                     st.markdown("<br>", unsafe_allow_html=True)
                     
+                    if is_visual:
+                        header_v = st.empty()
+                        header_v.markdown(flex_header("🎞️ Matching Video to Slides..."), unsafe_allow_html=True)
+                        p_v = st.progress(0.0)
+                        lbl_v = st.empty()
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        
                     header2 = st.empty()
                     header2.markdown(flex_header("🎙️ Transcribing Audio..."), unsafe_allow_html=True)
                     p2 = st.progress(0.0)
@@ -272,7 +293,10 @@ def view_upload():
                     st.markdown("<br>", unsafe_allow_html=True)
                     
                     header3 = st.empty()
-                    header3.markdown(flex_header("🧠 Aligning Insights using Gemini..."), unsafe_allow_html=True)
+                    if is_visual:
+                        header3.markdown(flex_header("🧮 Fusing Math & Generating Insights..."), unsafe_allow_html=True)
+                    else:
+                        header3.markdown(flex_header("🧠 Aligning Insights using Gemini..."), unsafe_allow_html=True)
                     p3 = st.progress(0.0)
                     lbl3 = st.empty()
                     
@@ -336,7 +360,35 @@ def view_upload():
                 st.session_state.slides = slides
                 pdf_cb(1.0, f"✅ {len(slides)} slides processed.")
 
-                # --- STAGE 2: AUDIO ---
+                # --- STAGE 2: VIDEO (NEW) ---
+                if is_visual:
+                    def video_cb(frac, msg): 
+                        pct = min(max(frac, 0.0), 1.0)
+                        header_v.markdown(flex_header("🎞️ Matching Video to Slides...", pct), unsafe_allow_html=True)
+                        p_v.progress(pct)
+                        lbl_v.caption(msg)
+                        
+                    from core.pdf_processor import format_slides_for_prompt
+                    slides_text = format_slides_for_prompt(st.session_state.slides)
+                    video_frames_dir = os.path.join(temp_dir, "video_frames")
+                    
+                    # Phase 1: Extract frames & cuts
+                    chapters = extract_and_detect_transitions(st.session_state.media_path, video_frames_dir, progress_cb=video_cb)
+                    
+                    # Phase 2: Match to slides
+                    def match_cb(frac, msg):
+                        video_cb(0.5 + (frac * 0.5), msg)
+                        
+                    st.session_state.visual_chapters = match_keyframes_to_slides(
+                        chapters, 
+                        st.session_state.slide_images, 
+                        slides_text, 
+                        api_key=api_key, 
+                        progress_cb=match_cb
+                    )
+                    video_cb(1.0, "✅ Video structural mapping complete.")
+
+                # --- STAGE 3: AUDIO ---
                 def audio_cb(frac, msg): 
                     pct = min(max(frac, 0.0), 1.0)
                     header2.markdown(flex_header("🎙️ Transcribing Audio...", pct), unsafe_allow_html=True)
@@ -350,21 +402,34 @@ def view_upload():
                 )
                 audio_cb(1.0, f"✅ {len(st.session_state.transcript_segments)} segments transcribed.")
 
-                # --- STAGE 3: AI ALIGNMENT ---
+                # --- STAGE 4: ALIGNMENT ---
                 def align_cb(frac, msg): 
                     pct = min(max(frac, 0.0), 1.0)
-                    header3.markdown(flex_header("🧠 Aligning Insights using Gemini...", pct), unsafe_allow_html=True)
+                    title = "🧮 Fusing Math & Generating Insights..." if is_visual else "🧠 Aligning Insights using Gemini..."
+                    header3.markdown(flex_header(title, pct), unsafe_allow_html=True)
                     p3.progress(pct)
                     lbl3.caption(msg)
                 
-                final_output = align_transcript_to_slides(
-                    segments    = st.session_state.transcript_segments,
-                    slides      = st.session_state.slides,
-                    api_key     = api_key,
-                    model_name  = selected_model,
-                    is_paid     = is_paid_api,
-                    progress_cb = align_cb,
-                )
+                if is_visual:
+                    final_output = align_video_to_slides(
+                        segments      = st.session_state.transcript_segments,
+                        keyframes     = st.session_state.visual_chapters,
+                        slides        = st.session_state.slides,
+                        api_key       = api_key,
+                        models_to_try = models_to_try,
+                        is_paid       = is_paid_api,
+                        progress_cb   = align_cb,
+                    )
+                else:
+                    final_output = align_transcript_to_slides(
+                        segments      = st.session_state.transcript_segments,
+                        slides        = st.session_state.slides,
+                        api_key       = api_key,
+                        model_name    = selected_model,
+                        is_paid       = is_paid_api,
+                        progress_cb   = align_cb,
+                    )
+                    
                 st.session_state.final_output = final_output
                 align_cb(1.0, f"✅ Pipeline complete! {len(final_output)} notes generated.")
                 
