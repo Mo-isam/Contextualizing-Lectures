@@ -62,6 +62,8 @@ class AllModelsFailedError(Exception):
 # ── Global State for Proactive Rate Limiting ─────────────────────────────────
 # Dictionary to track pacing per individual API key
 _last_call_times = {}
+# Set to permanently blacklist models that hit daily quota limits during a run
+_dead_models = set()
 
 # Free tier limits (2026 guidelines) populated from config
 MODEL_RPM_LIMITS = app_config.get("llm", "rpm_limits", {"default": 15})
@@ -192,7 +194,12 @@ def generate_content_with_fallback(
             response_schema=schema
         )
 
+    global _dead_models
+    
     for model_id in models_to_try:
+        if model_id in _dead_models:
+            continue  # Skip this model for the rest of the session; it's dead.
+            
         for attempt in range(1, max_retries + 1):
             _apply_proactive_pacing(api_key, model_id, is_paid, progress_cb, progress_idx)
             
@@ -228,6 +235,7 @@ def generate_content_with_fallback(
                     msg = f"⚠️ Model {model_id} exhausted/unavailable on {log_context}. Swapping models..."
                     logger.warning(msg)
                     if progress_cb: progress_cb(progress_idx, msg)
+                    _dead_models.add(model_id)  # Blacklist it permanently for this run
                     break  # Break attempt loop, move to next model in models_to_try
                     
                 # 3. Rate Limit (429), Overload (503), or Transient Error
