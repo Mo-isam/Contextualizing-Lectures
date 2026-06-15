@@ -1,26 +1,29 @@
 # 🎓 Contextualizing Lectures · AI
 
-An AI-powered pipeline that bridges static PDF slides with dynamic verbal insights from recorded lectures. It uses local Whisper models (or Gemini Audio) to transcribe lectures, Gemini Vision to read slides, and LLMs to semantically map the spoken word to the exact slide being presented.
+An AI-powered pipeline that bridges static PDF slides with dynamic verbal insights from recorded audio or video lectures. It features a **Dual-Pipeline Architecture**:
+1. **Audio-Only Pipeline:** Uses LLMs to semantically map spoken words to slide content via variable chunking.
+2. **Video-Visual Pipeline:** Uses deterministic Computer Vision (SSIM & ORB/RANSAC) to track on-screen slides, drastically reducing AI hallucination and API costs.
 
 ## 🏗️ Architecture
 
 This project follows a strict modular architecture separating the user interface from backend processing. Key features include:
-* **SPA "Wizard" State Machine:** The frontend uses a dynamic router (`app.py`), replacing cluttered sidebars with a clean, step-by-step Single-Page Application flow (Home → Upload → Processing → Studio) with dedicated modal dialogs.
-* **Live, Precise Progress Tracking:** The UI patches local CPU-bound processes (like Whisper's `tqdm`) to pipe real-time frame progression directly into elegant, right-aligned Streamlit progress bars.
-* **Variable Semantic Chunking & Overlapping Context:** Audio is sliced dynamically based on natural pauses. The AI Aligner passes the end of the previous chunk into the next prompt as `<previous_context>`, ensuring the LLM never loses context.
-* **Chain-of-Thought Alignment:** The AI uses a strict JSON schema that forces it to explain its reasoning step-by-step *before* mapping IDs, drastically reducing hallucinations.
-* **Per-User Proactive API Pacing & Fallback:** The pipeline dynamically reads rate limits from a YAML config, injecting micro-sleeps to avoid limits, and gracefully falls back through a priority list of models.
-* **O(1) Storage & Deduplication:** Uploads are hashed (SHA-256) for instant deduplication. Sessions (with custom titles and descriptions) are saved locally and load instantly without duplicating media files.
+* **Deterministic Visual Alignment (New):** For video uploads, it uses Gaussian-blurred SSIM for cut detection and RANSAC spatial verification to map video frames to PDF slides geometrically.
+* **Temporal Smoothing & Semantic Filtering (New):** "Slide build-up" animations are flawlessly grouped via 2-Pass Back-fill Smoothing. A Boolean LLM Filter is then used to expertly extract off-topic tangents and interleave them into the UI chronologically as visually distinct "Tangent" cards.
+* **Immersive Studio UI:** A widescreen, native-scrolling desktop experience featuring asymmetric columns (60/40 split) ensuring the slide remains permanently visible ("sticky") while scrolling through long transcripts.
+* **SPA "Wizard" State Machine:** The frontend uses a dynamic router (`app.py`), replacing cluttered sidebars with a clean, step-by-step flow (Home → Upload → Processing → Studio).
+* **Per-User Proactive API Pacing & Fallback:** The pipeline dynamically reads rate limits from a YAML config, injecting micro-sleeps to avoid limits, and gracefully falls back through a priority list of models. Blacklists "dead" models mid-run to prevent quota spam.
+* **O(1) Storage & Deduplication:** Uploads are hashed (SHA-256) for instant deduplication. Sessions save pipeline metadata (`pipeline_type`) locally and load instantly without duplicating media files.
 
 ```text
 .
 ├── app.py                # Main Streamlit SPA Router (State Machine)
 ├── config.yaml           # Auto-generated user configuration
-├── requirements.txt      # Python dependencies
+├── requirements.txt      # Python dependencies (OpenCV, PyMuPDF, etc.)
 ├── ui/                   # Frontend views, modals, CSS, and JS
 │   ├── dialogs.py        # Settings and Save Session modals
 ├── core/                 # Pure backend logic (No Streamlit allowed here)
 │   ├── config.py         # YAML Configuration Engine
+│   ├── video_processor.py# CV Engine (SSIM, ORB, RANSAC, Temporal Smoothing)
 ```
 
 ## 🚀 Installation & Usage
