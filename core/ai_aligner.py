@@ -330,14 +330,14 @@ def align_video_to_slides(
     progress_cb = None
 ) -> list[AlignedNote]:
     """
-    Deterministic Audio-Visual Fusion.
-    Maps audio segments to slides based on precise visual timestamps,
-    then queries the LLM for a single concise insight per slide block.
+    Deterministic Audio-Visual Fusion with Semantic Filtering.
+    Maps segments to visual chapters, then uses an LLM Boolean filter 
+    to extract off-topic tangents and generate targeted insights.
     """
     if progress_cb: progress_cb(0.0, "🧮 Fusing audio transcripts to visual timeline...")
     
-    # 1. Group segments into slide blocks based on temporal midpoint
-    blocks = []
+    # 1. Group segments into CV visual blocks based on temporal midpoint
+    cv_blocks = []
     current_block = {"slide_number": -1, "segments": []}
     
     for seg in segments:
@@ -345,7 +345,6 @@ def align_video_to_slides(
         
         matched_slide = 0 # Default to General
         for kf in keyframes:
-            # Safely handle the last keyframe if end_time is None
             end_t = kf.get("end_time") or float('inf')
             if kf["start_time"] <= midpoint <= end_t:
                 matched_slide = kf.get("matched_slide", 0)
@@ -353,52 +352,69 @@ def align_video_to_slides(
         
         if matched_slide != current_block["slide_number"]:
             if current_block["segments"]:
-                blocks.append(current_block)
+                cv_blocks.append(current_block)
             current_block = {"slide_number": matched_slide, "segments": [seg]}
         else:
             current_block["segments"].append(seg)
             
     if current_block["segments"]:
-        blocks.append(current_block)
+        cv_blocks.append(current_block)
 
-    # 2. Build final notes and generate AI Insights
+    # 2. Semantically Filter and Build Final Notes
     final_notes = []
     slide_dict = {s.page_number: s for s in slides}
-    total_blocks = len(blocks)
+    total_blocks = len(cv_blocks)
     
-    # Strict JSON Schema for insight
+    # Strict JSON Schema for Boolean Semantic Filter
     schema = {
         "type": "OBJECT",
-        "properties": {"ai_insight": {"type": "STRING"}},
-        "required": ["ai_insight"]
+        "properties": {
+            "step_by_step_reasoning": {"type": "STRING"},
+            "evaluations": {
+                "type": "ARRAY",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "segment_id": {"type": "INTEGER"},
+                        "is_on_topic": {"type": "BOOLEAN"}
+                    },
+                    "required": ["segment_id", "is_on_topic"]
+                }
+            },
+            "ai_insight": {"type": "STRING"}
+        },
+        "required": ["step_by_step_reasoning", "evaluations", "ai_insight"]
     }
 
-    for idx, block in enumerate(blocks):
+    for idx, block in enumerate(cv_blocks):
         s_num = block["slide_number"]
         block_segs = block["segments"]
         
-        t_start = block_segs[0].start
-        t_end = block_segs[-1].end
-        exact_transcript = " ".join([s.text for s in block_segs]).strip()
-        
-        slide_title = slide_dict[s_num].title if s_num in slide_dict else "General / Off-topic"
         slide_text = slide_dict[s_num].text if s_num in slide_dict else ""
+        chunk_transcript = "\n".join([f"[ID: {seg.id}] {seg.text}" for seg in block_segs])
         
         ai_insight = ""
+        on_topic_ids = [seg.id for seg in block_segs] # Assume all on-topic by default
+        off_topic_ids = []
         
-        # Only query LLM if there is text and it's an actual slide (>0)
-        if exact_transcript and s_num > 0 and api_key:
+        # Only query LLM if there is transcript text and it's an actual slide (>0)
+        if chunk_transcript.strip() and s_num > 0 and api_key:
             pct = idx / total_blocks
-            if progress_cb: progress_cb(pct, f"🧠 Generating insight for Slide {s_num}...")
+            if progress_cb: progress_cb(pct, f"🧠 Semantically filtering Slide {s_num}...")
             
             prompt = (
-                "You are an expert academic assistant specializing in lecture analysis. "
-                "Compare the SLIDE TEXT to the PROFESSOR TRANSCRIPT.\n\n"
-                "RULES:\n"
-                "1. If the professor explains something vital that is NOT written on the slide, summarize it in `ai_insight` (1-2 sentences).\n"
-                "2. If the professor just read the slide exactly or made minor off-topic remarks, return an empty string for `ai_insight`.\n\n"
+                "You are an expert academic assistant specializing in lecture analysis.\n\n"
+                "## YOUR TASK\n"
+                "You will receive:\n"
+                f"1. **Slide Text** — the text content currently shown on the screen (Slide {s_num}).\n"
+                "2. **Transcript Chunk** — the spoken lecture that occurred while this slide was visible. Each sentence has a unique [ID: X].\n\n"
+                "Your job is to evaluate the transcript and filter out off-topic remarks.\n\n"
+                "## RULES (CRITICAL)\n"
+                "1. **Chain of Thought Reasoning**: Provide a brief `step_by_step_reasoning` of your evaluation.\n"
+                "2. **Boolean Evaluation**: For EVERY segment ID in the transcript, determine if it is discussing the slide content (`is_on_topic`: true) or if it is a tangent, admin remark, or off-topic story (`is_on_topic`: false).\n"
+                "3. **AI Insight**: If the professor explains something vital that is NOT written on the slide, summarize it in `ai_insight` (1-2 sentences). If they just read the slide or go off-topic, leave it empty.\n\n"
                 f"--- SLIDE TEXT ---\n{slide_text}\n\n"
-                f"--- PROFESSOR TRANSCRIPT ---\n{exact_transcript}"
+                f"--- TRANSCRIPT CHUNK ---\n{chunk_transcript}"
             )
             
             try:
@@ -409,27 +425,86 @@ def align_video_to_slides(
                     schema=schema,
                     temperature=0.0,
                     is_paid=is_paid,
-                    log_context=f"insight for slide {s_num}",
+                    log_context=f"semantic filter for slide {s_num}",
                     progress_cb=progress_cb,
                     progress_idx=pct,
                     max_retries=2
                 )
-                ai_insight = json.loads(response_text).get("ai_insight", "").strip()
+                data = json.loads(response_text)
+                ai_insight = data.get("ai_insight", "").strip()
+                evaluations = data.get("evaluations", [])
+                
+                on_topic_ids = []
+                off_topic_ids = []
+                
+                # Process the LLM's true/false routing
+                for eval_item in evaluations:
+                    seg_id = eval_item.get("segment_id")
+                    if eval_item.get("is_on_topic", True):
+                        on_topic_ids.append(seg_id)
+                    else:
+                        off_topic_ids.append(seg_id)
+                        
+                # Fallback: keep any un-evaluated segments on-topic to prevent data loss
+                evaluated_ids = set(on_topic_ids + off_topic_ids)
+                for seg in block_segs:
+                    if seg.id not in evaluated_ids:
+                        on_topic_ids.append(seg.id)
+                        
             except SafetyFilterError:
                 pass # Already logged by fallback service
             except AllModelsFailedError:
                 pass # Already logged by fallback service
             except Exception as e:
-                logger.error(f"Failed to generate insight for slide {s_num}: {e}")
+                logger.error(f"Failed to generate insight/filter for slide {s_num}: {e}")
                 
-        final_notes.append(AlignedNote(
-            slide_number=s_num,
-            slide_title=slide_title,
-            exact_transcript=exact_transcript,
-            ai_insight=ai_insight,
-            timestamp_start=t_start,
-            timestamp_end=t_end
-        ))
+        elif s_num == 0:
+            # If CV explicitly mapped this to Slide 0, everything is automatically off-topic
+            on_topic_ids = []
+            off_topic_ids = [seg.id for seg in block_segs]
+
+        # ── Helper to group IDs into continuous blocks and create Notes ──
+        def _append_notes(target_slide_num, target_ids, target_insight):
+            if not target_ids: return
+            target_ids.sort()
+            
+            blocks_of_ids = []
+            current = [target_ids[0]]
+            for i in range(1, len(target_ids)):
+                if target_ids[i] == current[-1] + 1:
+                    current.append(target_ids[i])
+                else:
+                    blocks_of_ids.append(current)
+                    current = [target_ids[i]]
+            blocks_of_ids.append(current)
+            
+            segment_dict = {seg.id: seg for seg in block_segs}
+            
+            for b in blocks_of_ids:
+                valid_segs = [segment_dict[vid] for vid in b if vid in segment_dict]
+                if not valid_segs: continue
+                
+                t_start = valid_segs[0].start
+                t_end = valid_segs[-1].end
+                transcript_text = " ".join([seg.text for seg in valid_segs])
+                
+                s_title = slide_dict[target_slide_num].title if target_slide_num in slide_dict else "General / Off-topic"
+                
+                final_notes.append(AlignedNote(
+                    slide_number=target_slide_num,
+                    slide_title=s_title,
+                    exact_transcript=transcript_text,
+                    ai_insight=target_insight,
+                    timestamp_start=t_start,
+                    timestamp_end=t_end
+                ))
+
+        # Reconstruct the notes based on the filter
+        _append_notes(s_num, on_topic_ids, ai_insight)
+        _append_notes(0, off_topic_ids, "") # Off-topic notes go to Slide 0 without an insight
+        
+    # Re-sort everything by chronological start time
+    final_notes.sort(key=lambda x: x.timestamp_start)
         
     if progress_cb: progress_cb(1.0, f"✅ Video alignment complete — {len(final_notes)} notes generated.")
     
