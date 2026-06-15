@@ -12,7 +12,15 @@ html, body, [class*="css"] {
 
 /* Hide top header and reduce whitespace for SPA feel */
 header {visibility: hidden;}
-.block-container {padding-top: 2rem !important; max-width: 1200px;}
+.block-container {padding-top: 2rem !important; max-width: 1600px;}
+
+/* Make the left column (PDF Viewer) sticky during scrolling */
+[data-testid="stColumn"]:first-of-type {
+    position: sticky !important;
+    top: 2rem !important;
+    align-self: flex-start !important;
+    z-index: 10;
+}
 
 /* Elegant Gradient Title */
 .hero-title {

@@ -38,9 +38,6 @@ def render_pdf_viewer_images():
     if not images:
         st.info("No slide images available.")
         return
-    if not images:
-        st.info("No slide images available.")
-        return
 
     num_pages = len(images)
     if "active_slide" not in st.session_state or st.session_state.active_slide is None:
@@ -49,6 +46,15 @@ def render_pdf_viewer_images():
     st.session_state.active_slide = max(1, min(st.session_state.active_slide, num_pages))
     active_idx = st.session_state.active_slide - 1
 
+    # 1. Render the image FIRST
+    active_img_path = images[active_idx]
+    st.image(
+        active_img_path,
+        width="stretch",
+        caption=f"Showing slide {st.session_state.active_slide} of {num_pages}"
+    )
+
+    # 2. Render the controls BELOW the image
     col_prev, col_num, col_next = st.columns([1, 2, 1])
     
     with col_prev:
@@ -76,13 +82,6 @@ def render_pdf_viewer_images():
             if st.session_state.active_slide < num_pages:
                 st.session_state.active_slide += 1
                 st.rerun()
-
-    active_img_path = images[active_idx]
-    st.image(
-        active_img_path,
-        width="stretch",
-        caption=f"Showing slide {st.session_state.active_slide} of {num_pages}"
-    )
 
 
 def render_note_card(note: AlignedNote, idx: int):

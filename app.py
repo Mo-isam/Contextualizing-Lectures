@@ -467,7 +467,8 @@ def view_studio():
     render_audio_player()
     st.divider()
     
-    col_pdf, col_notes = st.columns([1, 1], gap="large")
+    # 1.5 to 1 ratio gives the PDF ~60% of the screen width
+    col_pdf, col_notes = st.columns([1.5, 1], gap="large")
     with col_pdf:
         st.markdown('<div class="col-label">📄 Lecture Slides</div>', unsafe_allow_html=True)
         info = get_pdf_info(st.session_state.pdf_path) if st.session_state.pdf_path else {"page_count": 0}
@@ -500,20 +501,21 @@ def view_studio():
             q = search_q.strip().lower()
             filtered = [n for n in filtered if q in n.slide_title.lower() or q in n.exact_transcript.lower() or q in n.ai_insight.lower()]
 
-        st.markdown('<div class="notes-panel">', unsafe_allow_html=True)
-        if filtered:
-            for i, note in enumerate(filtered):
-                render_note_card(note, i)
-        else:
-            st.markdown(
-                f"""<div style="background:rgba(255,255,255,0.01); border:1px dashed rgba(100,160,255,0.15); border-radius:14px; padding:3rem 1.5rem; text-align:center; color:#8b949e;">
-                  <div style="font-size:2rem; margin-bottom:0.5rem;">🧠</div>
-                  <strong style="color:#58a6ff;">No Specific Verbal Insights</strong><br>
-                  <span style="font-size:0.85rem; color:#484f58; display:block; margin-top:6px; line-height:1.5;">
-                    The professor did not explain verbal-only slides or hidden insights for Slide {active_slide} in this chunk.
-                  </span>
-                </div>""", unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        # Native scrollable container!
+        with st.container(height=700, border=False):
+            if filtered:
+                for i, note in enumerate(filtered):
+                    render_note_card(note, i)
+            else:
+                st.markdown(
+                    f"""<div style="background:rgba(255,255,255,0.01); border:1px dashed rgba(100,160,255,0.15); border-radius:14px; padding:3rem 1.5rem; text-align:center; color:#8b949e;">
+                      <div style="font-size:2rem; margin-bottom:0.5rem;">🧠</div>
+                      <strong style="color:#58a6ff;">No Specific Verbal Insights</strong><br>
+                      <span style="font-size:0.85rem; color:#484f58; display:block; margin-top:6px; line-height:1.5;">
+                        The professor did not explain verbal-only slides or hidden insights for Slide {active_slide} in this chunk.
+                      </span>
+                    </div>""", unsafe_allow_html=True)
+                    
         inject_jump_script()
 
 
