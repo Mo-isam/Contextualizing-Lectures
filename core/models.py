@@ -32,6 +32,7 @@ class AlignedNote:
     ai_insight: str
     timestamp_start: float
     timestamp_end: float
+    is_off_topic: bool = False
 
 
 @dataclass

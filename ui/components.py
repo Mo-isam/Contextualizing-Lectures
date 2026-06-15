@@ -95,14 +95,23 @@ def render_note_card(note: AlignedNote, idx: int):
 
     exact_transcript = note.exact_transcript
     ai_insight       = note.ai_insight
+    is_off_topic     = getattr(note, "is_off_topic", False)
 
-    body_html = f'<div class="note-body" style="font-style: italic; border-left: 2px solid #64b0ff; padding-left: 10px; margin-bottom: 12px; color: #c9d1d9;">"{exact_transcript}"</div>'
-    if ai_insight:
-        body_html += f'<div style="font-size: 0.8rem; color: #a8c4f0; background: rgba(100,176,255,0.08); padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; border: 1px solid rgba(100,176,255,0.15);">💡 <b>AI Insight:</b> {ai_insight}</div>'
+    if is_off_topic:
+        # Grey Tangent Theme
+        badge_html = f'<span class="note-slide-badge" style="background:rgba(139,148,158,0.15); border-color:rgba(139,148,158,0.3); color:#8b949e;">💬 Tangent</span>'
+        body_html = f'<div class="note-body" style="font-style: italic; border-left: 2px solid #8b949e; padding-left: 10px; margin-bottom: 12px; color: #8b949e;">"{exact_transcript}"</div>'
+        # Tangents don't have insights by definition
+    else:
+        # Standard Blue Theme
+        badge_html = f'<span class="note-slide-badge">Slide {slide_num}</span>'
+        body_html = f'<div class="note-body" style="font-style: italic; border-left: 2px solid #64b0ff; padding-left: 10px; margin-bottom: 12px; color: #c9d1d9;">"{exact_transcript}"</div>'
+        if ai_insight:
+            body_html += f'<div style="font-size: 0.8rem; color: #a8c4f0; background: rgba(100,176,255,0.08); padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; border: 1px solid rgba(100,176,255,0.15);">💡 <b>AI Insight:</b> {ai_insight}</div>'
 
     card_html = f"""
     <div class="note-card" id="note-card-{idx}">
-      <span class="note-slide-badge">Slide {slide_num}</span>
+      {badge_html}
       <div class="note-title">{title}</div>
       {body_html}
       <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px;">

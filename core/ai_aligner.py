@@ -464,7 +464,7 @@ def align_video_to_slides(
             off_topic_ids = [seg.id for seg in block_segs]
 
         # ── Helper to group IDs into continuous blocks and create Notes ──
-        def _append_notes(target_slide_num, target_ids, target_insight):
+        def _append_notes(target_slide_num, target_ids, target_insight, is_tangent=False):
             if not target_ids: return
             target_ids.sort()
             
@@ -488,7 +488,11 @@ def align_video_to_slides(
                 t_end = valid_segs[-1].end
                 transcript_text = " ".join([seg.text for seg in valid_segs])
                 
-                s_title = slide_dict[target_slide_num].title if target_slide_num in slide_dict else "General / Off-topic"
+                # Fix the Title Bug: Use actual slide title, or fallback to Slide X
+                if target_slide_num == 0:
+                    s_title = "General / Off-topic"
+                else:
+                    s_title = slide_dict[target_slide_num].title if target_slide_num in slide_dict else f"Slide {target_slide_num}"
                 
                 final_notes.append(AlignedNote(
                     slide_number=target_slide_num,
@@ -496,12 +500,14 @@ def align_video_to_slides(
                     exact_transcript=transcript_text,
                     ai_insight=target_insight,
                     timestamp_start=t_start,
-                    timestamp_end=t_end
+                    timestamp_end=t_end,
+                    is_off_topic=is_tangent
                 ))
 
         # Reconstruct the notes based on the filter
-        _append_notes(s_num, on_topic_ids, ai_insight)
-        _append_notes(0, off_topic_ids, "") # Off-topic notes go to Slide 0 without an insight
+        _append_notes(s_num, on_topic_ids, ai_insight, is_tangent=False)
+        # Keep off-topic on the active slide, but flag it as a tangent!
+        _append_notes(s_num, off_topic_ids, "", is_tangent=True)
         
     # Re-sort everything by chronological start time
     final_notes.sort(key=lambda x: x.timestamp_start)
