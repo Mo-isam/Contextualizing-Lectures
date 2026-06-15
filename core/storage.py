@@ -56,6 +56,7 @@ def save_session(session_data: LectureSession, temp_dir: str = None) -> str:
         "slides"              : _to_dict(session_data.slides),
         "final_output"        : _to_dict(session_data.final_output),
         "timestamp"           : time.time(),
+        "pipeline_type"       : getattr(session_data, "pipeline_type", "audio"),
     }
 
     session_file = os.path.join(SESSIONS_DIR, f"{session_id}.json")
@@ -119,5 +120,6 @@ def load_session(filename: str) -> LectureSession:
         transcript_segments=segments,
         slides=slides,
         final_output=final_output,
-        timestamp=data.get("timestamp", 0.0)
+        timestamp=data.get("timestamp", 0.0),
+        pipeline_type=data.get("pipeline_type", "audio")
     )

@@ -64,7 +64,8 @@ def save_session_modal():
                     media_path=st.session_state.get("media_path"),
                     transcript_segments=st.session_state.get("transcript_segments"),
                     slides=st.session_state.get("slides"),
-                    final_output=st.session_state.get("final_output")
+                    final_output=st.session_state.get("final_output"),
+                    pipeline_type=st.session_state.get("pipeline_mode", "audio")
                 )
                 save_session(
                     session_data=session_data, 

@@ -47,3 +47,4 @@ class LectureSession:
     session_description: str | None = None
     session_id: str | None = None
     timestamp: float = 0.0
+    pipeline_type: str = "audio" # Distinguishes between "audio" (legacy) and "visual" sessions

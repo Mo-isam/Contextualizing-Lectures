@@ -175,6 +175,7 @@ def view_load_session():
                         st.session_state.transcript_segments = session_data.transcript_segments
                         st.session_state.slides = session_data.slides
                         st.session_state.final_output = session_data.final_output
+                        st.session_state.pipeline_mode = getattr(session_data, "pipeline_type", "audio")
 
                         with st.spinner("🎨 Rendering slide images for display..."):
                             temp_dir = get_or_create_temp_dir()
@@ -480,7 +481,11 @@ def view_studio():
         # General notes block (Slide 0)
         general_notes = [n for n in notes if n.slide_number == 0]
         if general_notes:
-            with st.expander(f"🗣️ General / Off-Slide Discussion ({len(general_notes)})", expanded=False):
+            # Dynamically rename the expander based on the pipeline source
+            mode = st.session_state.get("pipeline_mode", "audio")
+            expander_title = "🎬 Unmapped Video (Intro / Outro)" if mode == "visual" else "🗣️ General / Off-Slide Discussion"
+            
+            with st.expander(f"{expander_title} ({len(general_notes)})", expanded=False):
                 for i, note in enumerate(general_notes):
                     render_note_card(note, f"gen_{i}")
                     
