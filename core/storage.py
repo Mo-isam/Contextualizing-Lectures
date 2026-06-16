@@ -88,7 +88,8 @@ def list_saved_sessions() -> list[dict]:
                         "description": data.get("session_description", ""),
                         "id": data.get("session_id"),
                         "filename": f,
-                        "timestamp": data.get("timestamp", 0)
+                        "timestamp": data.get("timestamp", 0),
+                        "pipeline_type": data.get("pipeline_type", "audio")
                     })
             except Exception as e:
                 logger.error(f"Failed to read session file {f}: {e}")
