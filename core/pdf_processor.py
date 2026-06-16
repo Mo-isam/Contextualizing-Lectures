@@ -8,7 +8,6 @@ structured mapping of page numbers to their text content.
 import os
 import json
 import time
-import fitz          # PyMuPDF
 import logging
 from PIL import Image
 
@@ -17,9 +16,6 @@ from core.models import Slide
 from core.config import app_config
 
 logger = logging.getLogger(__name__)
-
-# Silence non-fatal structure warnings (e.g., "No common ancestor in structure tree")
-fitz.TOOLS.mupdf_display_errors(False)
 
 
 def extract_slide_text(pdf_path: str) -> list[Slide]:
@@ -46,6 +42,8 @@ def extract_slide_text(pdf_path: str) -> list[Slide]:
     if not os.path.exists(pdf_path):
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
 
+    import fitz
+    fitz.TOOLS.mupdf_display_errors(False)
     slides = []
 
     try:
@@ -104,6 +102,8 @@ def render_pdf_to_images(pdf_path: str, output_dir: str) -> list[str]:
     Returns a list of absolute paths to the generated images.
     """
     import os
+    import fitz
+    fitz.TOOLS.mupdf_display_errors(False)
     doc = fitz.open(pdf_path)
     image_paths = []
     
@@ -136,6 +136,7 @@ def get_pdf_info(pdf_path: str) -> dict:
     Used for quick UI display.
     """
     try:
+        import fitz
         doc  = fitz.open(pdf_path)
         info = {
             "page_count" : len(doc),
