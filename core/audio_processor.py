@@ -20,12 +20,9 @@ from core.models import TranscriptSegment
 
 logger = logging.getLogger(__name__)
 
-# Lazy-import Whisper so the app loads even if torch isn't installed yet.
-try:
-    import whisper
-    WHISPER_AVAILABLE = True
-except ImportError:
-    WHISPER_AVAILABLE = False
+# Check for Whisper without physically importing heavy PyTorch into memory yet.
+import importlib.util
+WHISPER_AVAILABLE = importlib.util.find_spec("whisper") is not None
 
 
 from core.config import app_config
@@ -132,7 +129,8 @@ def transcribe_audio(audio_path: str, progress_cb=None) -> list[TranscriptSegmen
     global _whisper_model_cache
     with _whisper_lock:
         if _whisper_model_cache is None:
-            if progress_cb: progress_cb(0.05, f"📥 Loading Whisper '{WHISPER_MODEL_SIZE}' model...")
+            if progress_cb: progress_cb(0.05, f"📥 Loading Whisper '{WHISPER_MODEL_SIZE}' model into memory...")
+            import whisper
             _whisper_model_cache = whisper.load_model(WHISPER_MODEL_SIZE)
 
         if progress_cb: progress_cb(0.1, "🎙️ Whisper model active. Preparing audio frames...")
