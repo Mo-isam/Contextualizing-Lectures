@@ -8,9 +8,7 @@ This folder isolates all frontend layout, styling, and widget rendering from the
 * **`assets.py`**: A utility that reads raw CSS and JS files and cleanly injects them into the Streamlit DOM.
 * **`styles.css` & `scripts.js`**: Raw web assets kept separate from Python code. Includes aggressive CSS selectors to override native Streamlit UI quirks (like hiding multi-file upload buttons).
 
-### 🚦 The SPA Router
-Instead of a single long script, `app.py` acts as a **State Machine Router**. It reads `st.session_state.step` and dynamically mounts one of four views:
-1. `view_home()`
-2. `view_load_session()`
-3. `view_upload()`
-4. `view_studio()`
+### 🚦 The SPA Router & View Decoupling
+To achieve sub-second startup times, the UI architecture is split in two:
+1. **`app.py`**: An ultra-lightweight **State Machine Router**. It imports no heavy backend physics. It simply checks `st.session_state.step` and mounts the correct view.
+2. **`ui/views.py`**: Contains the actual view logic (`view_home`, `view_upload`, `view_processing`, `view_studio`). Heavy backend imports are pushed entirely *inside* the execution blocks of these functions so they only load when the user physically clicks a trigger button.

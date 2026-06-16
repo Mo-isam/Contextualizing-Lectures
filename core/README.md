@@ -8,9 +8,10 @@ This folder contains the pure backend logic, data transformation, and LLM networ
 
 ### 🧩 Key Components
 * **`config.py`**: The centralized Configuration Engine. It auto-generates and reads `config.yaml`, completely eliminating hardcoded "magic numbers" (like Whisper models, LLM RPM limits, and UI defaults) from the codebase.
+* **`system_loader.py`**: The "Bouncer" for system RAM. Uses a Strategy Pattern to parse user settings and intelligently lazy-load heavy dependencies (PyTorch, OpenCV, PyMuPDF) only when required.
 * **`models.py`**: The strict source of truth for data structures (e.g., `AlignedNote`, `LectureSession`). Includes flags like `is_off_topic` and `pipeline_type` to dictate UI rendering behaviors.
 * **`llm_service.py`**: The centralized AI API gateway and Facade. It manages proactive RPM pacing, fallback routing, and dynamically blacklists `_dead_models` mid-run to prevent quota spam loops.
-* **`storage.py`**: Handles O(1) instantaneous session saving. It writes strictly-typed JSON metadata that points to deduplicated, SHA-256 hashed files, permanently solving massive disk bloat.
+* **`storage.py` & `file_utils.py`**: Handles O(1) instantaneous session saving. Maintains a background `file_registry.json` to deduplicate files via SHA-256 while maintaining pristine, human-readable filenames on disk.
 * **`audio_processor.py`**: Manages FFmpeg media extractions and Whisper/Gemini routing. It directly intercepts and patches the global `tqdm` module to stream live, frame-by-frame progress to the UI.
 * **`video_processor.py`**: The Computer Vision engine. Extracts video frames and detects structural cuts using Gaussian-blurred SSIM. Matches frames to PDF slides using ORB feature detection and RANSAC spatial verification, utilizing 2-Pass Temporal Smoothing to perfectly handle slide build-up animations without AI.
 * **`ai_aligner.py`**: The alignment engine supporting dual pipelines:
