@@ -7,12 +7,10 @@ to PDF slides using ORB feature matching and Temporal Smoothing.
 """
 
 import os
-import cv2
 import json
 import logging
 import numpy as np
 from PIL import Image
-from skimage.metrics import structural_similarity as ssim
 
 from core.config import app_config
 from core.llm_service import generate_content_with_fallback
@@ -29,6 +27,9 @@ def extract_and_detect_transitions(video_path: str, output_dir: str, progress_cb
     Reads video at specified FPS, compares frames using blurred SSIM, 
     and saves keyframes where structural layout changes occur.
     """
+    import cv2
+    from skimage.metrics import structural_similarity as ssim
+    
     os.makedirs(output_dir, exist_ok=True)
     
     cap = cv2.VideoCapture(video_path)
@@ -101,6 +102,8 @@ def extract_and_detect_transitions(video_path: str, output_dir: str, progress_cb
 
 def _get_orb_matches(kp1, des1, kp2, des2):
     """Calculate spatially verified feature matches using Lowe's Ratio and RANSAC."""
+    import cv2
+    
     if des1 is None or des2 is None or len(des1) < 2 or len(des2) < 2:
         return 0
         
@@ -133,6 +136,8 @@ def match_keyframes_to_slides(keyframes: list[dict], slide_images: list[str], sl
     Pass 1: CV RANSAC ORB Matching
     Pass 2: Temporal Smoothing (Back-Fill) & AI Anomaly Rescue
     """
+    import cv2
+    
     strategy = app_config.get("video", "matching_strategy", "hybrid")
     logger.info(f"Starting slide matching using strategy: '{strategy}'")
     
