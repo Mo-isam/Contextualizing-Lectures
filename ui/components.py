@@ -138,14 +138,19 @@ def render_library_card(session_info: dict, key_suffix: str) -> bool:
     import time
     name = session_info.get("name", "Untitled")
     desc = session_info.get("description", "")
+    pipeline_type = session_info.get("pipeline_type", "audio")
+    
     if not desc:
         desc = "No description provided."
         
     ts = session_info.get("timestamp", 0)
     dt_str = time.strftime("%b %d, %Y", time.localtime(ts))
     
+    # Dynamic iconography based on pipeline context
+    icon = "🎞️" if pipeline_type == "visual" else "🎙️"
+    
     with st.container(border=True):
-        st.markdown(f"<h4 style='margin-top: 0.5rem;'>📝 {name}</h4>", unsafe_allow_html=True)
+        st.markdown(f"<h4 style='margin-top: 0.5rem;'>{icon} {name}</h4>", unsafe_allow_html=True)
         st.caption(f"📅 Edited: {dt_str}")
         st.markdown(f"<div style='min-height: 45px; font-size: 0.95rem; color: #8b949e;'>{desc}</div>", unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
