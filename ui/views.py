@@ -173,140 +173,161 @@ def view_upload():
                         
                         st.session_state.media_path = save_file(media_file.getbuffer(), media_file.name, media_dir, use_registry=True)
                         st.session_state.pipeline_mode = pipeline_mode
-                        run_pipeline_clicked = True
-
-    if run_pipeline_clicked:
-        upload_ui_placeholder.empty()
-        with st.container():
-            st.markdown("<br><br><div class='hero-title' style='font-size: 2.5rem;'>🤖 Analyzing Lecture...</div>", unsafe_allow_html=True)
-            st.markdown("<br>", unsafe_allow_html=True)
-            
-            def flex_header(title, pct=0.0):
-                return f"""<div style='display: flex; justify-content: space-between; font-weight: 600; margin-bottom: 8px;'>
-                             <span>{title}</span>
-                             <span style='color:#58a6ff;'>{int(pct*100)}%</span>
-                           </div>"""
-
-            is_visual = st.session_state.get("pipeline_mode") == "visual"
-            _, col_proc, _ = st.columns([1, 2, 1])
-            with col_proc:
-                with st.container(border=True):
-                    header1 = st.empty(); header1.markdown(flex_header("📄 Extracting Text from Slides..."), unsafe_allow_html=True)
-                    p1 = st.progress(0.0); lbl1 = st.empty(); st.markdown("<br>", unsafe_allow_html=True)
-                    
-                    if is_visual:
-                        header_v = st.empty(); header_v.markdown(flex_header("🎞️ Matching Video to Slides..."), unsafe_allow_html=True)
-                        p_v = st.progress(0.0); lbl_v = st.empty(); st.markdown("<br>", unsafe_allow_html=True)
                         
-                    header2 = st.empty(); header2.markdown(flex_header("🎙️ Transcribing Audio..."), unsafe_allow_html=True)
-                    p2 = st.progress(0.0); lbl2 = st.empty(); st.markdown("<br>", unsafe_allow_html=True)
-                    
-                    header3 = st.empty()
-                    header3.markdown(flex_header("🧮 Fusing Math & Generating Insights..." if is_visual else "🧠 Aligning Insights using Gemini..."), unsafe_allow_html=True)
-                    p3 = st.progress(0.0); lbl3 = st.empty(); st.markdown("<br>", unsafe_allow_html=True)
-                    
-                    if st.button("Cancel / Restart", use_container_width=True):
-                        change_step("home")
+                        # Instantly transition the UI state and rerun
+                        change_step("processing")
                         st.rerun()
 
-            # ── Execute Real Backend Logic (ALL HEAVY IMPORTS HAPPEN HERE!) ──
-            try:
-                from core.llm_service import discover_available_models, GEMINI_MODEL_PRIORITY
-                from core.pdf_processor import render_pdf_to_images, extract_slide_text, extract_slide_text_ai, format_slides_for_prompt
-                from core.video_processor import extract_and_detect_transitions, match_keyframes_to_slides
-                from core.audio_processor import process_media_file
-                from core.ai_aligner import align_transcript_to_slides, align_video_to_slides
+def view_processing():
+    """Dedicated view for pipeline execution and pre-warming."""
+    st.markdown("<br><br><div class='hero-title' style='font-size: 2.5rem;'>🤖 Analyzing Lecture...</div>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # ── SYSTEM PRE-FLIGHT UI ──
+    preflight_placeholder = st.empty()
+    def preflight_cb(msg):
+        preflight_placeholder.markdown(f"<div style='color: #8b949e; font-size: 0.95rem; margin-bottom: 1rem;'>⚙️ <b>System Pre-flight:</b> {msg}</div>", unsafe_allow_html=True)
 
-                temp_dir = get_or_create_temp_dir()
-                api_key = st.session_state.api_key
-                is_paid_api = st.session_state.get("is_paid_api", False)
+    from core.system_loader import preload_dependencies
+    preload_dependencies(
+        pipeline_mode=st.session_state.get("pipeline_mode", "audio"),
+        pdf_engine=st.session_state.get("pdf_engine", "Native"),
+        tx_engine=st.session_state.get("tx_engine", "Local"),
+        status_callback=preflight_cb
+    )
+    preflight_placeholder.markdown("<div style='color: #3fb950; font-size: 0.95rem; margin-bottom: 1rem;'>✅ <b>Systems Ready!</b> Starting pipeline...</div>", unsafe_allow_html=True)
+    
+    def flex_header(title, pct=0.0):
+        return f"""<div style='display: flex; justify-content: space-between; font-weight: 600; margin-bottom: 8px;'>
+                     <span>{title}</span>
+                     <span style='color:#58a6ff;'>{int(pct*100)}%</span>
+                   </div>"""
+
+    is_visual = st.session_state.get("pipeline_mode") == "visual"
+    _, col_proc, _ = st.columns([1, 2, 1])
+    
+    with col_proc:
+        with st.container(border=True):
+            header1 = st.empty(); header1.markdown(flex_header("📄 Extracting Text from Slides..."), unsafe_allow_html=True)
+            p1 = st.progress(0.0); lbl1 = st.empty(); st.markdown("<br>", unsafe_allow_html=True)
+            
+            if is_visual:
+                header_v = st.empty(); header_v.markdown(flex_header("🎞️ Matching Video to Slides..."), unsafe_allow_html=True)
+                p_v = st.progress(0.0); lbl_v = st.empty(); st.markdown("<br>", unsafe_allow_html=True)
                 
-                default_model_options = app_config.get("llm", "model_options", {})
-                model_label = st.session_state.get("selected_model_label", list(default_model_options.keys())[0] if default_model_options else "Auto")
-                selected_model = default_model_options.get(model_label, "gemini-3.5-flash")
-                
-                discovered_models = st.session_state.get("discovered_models", [])
-                if is_paid_api and not discovered_models:
-                    try:
-                        discovered_models = discover_available_models(api_key)
-                        st.session_state.discovered_models = discovered_models
-                    except Exception:
-                        pass
-                        
-                models_to_try = [selected_model] if selected_model else []
-                for m in discovered_models:
-                    if m not in models_to_try: models_to_try.append(m)
-                for m in GEMINI_MODEL_PRIORITY:
-                    if m not in models_to_try: models_to_try.append(m)
-
-                # STAGE 1: PDF
-                def pdf_cb(frac, msg): 
-                    pct = min(max(frac, 0.0), 1.0)
-                    header1.markdown(flex_header("📄 Extracting Text from Slides...", pct), unsafe_allow_html=True)
-                    p1.progress(pct); lbl1.caption(msg)
-                    
-                pdf_cb(0.0, "🎨 Rendering slide pages to crisp images...")
-                img_dir = os.path.join(temp_dir, "slide_images")
-                st.session_state.slide_images = render_pdf_to_images(st.session_state.pdf_path, img_dir)
-                st.session_state.active_slide = 1
-
-                if "Native" in st.session_state.pdf_engine:
-                    pdf_cb(0.5, "📄 Extracting text natively...")
-                    slides = extract_slide_text(st.session_state.pdf_path)
-                    empty_count = sum(1 for s in slides if "(No text found" in s["text"])
-                    if empty_count > 0: st.warning(f"⚠️ {empty_count} slides had no readable text. If alignment fails, switch 'Slide Extraction' to 'AI Vision' in Settings.")
-                else:
-                    def ai_pdf_cb(frac, msg): pdf_cb(0.1 + (frac * 0.9), msg)
-                    slides = extract_slide_text_ai(st.session_state.slide_images, api_key, models_to_try, is_paid=is_paid_api, progress_cb=ai_pdf_cb)
-                
-                st.session_state.slides = slides
-                pdf_cb(1.0, f"✅ {len(slides)} slides processed.")
-
-                # STAGE 2: VIDEO
-                if is_visual:
-                    def video_cb(frac, msg): 
-                        pct = min(max(frac, 0.0), 1.0)
-                        header_v.markdown(flex_header("🎞️ Matching Video to Slides...", pct), unsafe_allow_html=True)
-                        p_v.progress(pct); lbl_v.caption(msg)
-                        
-                    slides_text = format_slides_for_prompt(st.session_state.slides)
-                    video_frames_dir = os.path.join(temp_dir, "video_frames")
-                    chapters = extract_and_detect_transitions(st.session_state.media_path, video_frames_dir, progress_cb=video_cb)
-                    
-                    def match_cb(frac, msg): video_cb(0.5 + (frac * 0.5), msg)
-                    st.session_state.visual_chapters = match_keyframes_to_slides(chapters, st.session_state.slide_images, slides_text, api_key=api_key, progress_cb=match_cb)
-                    video_cb(1.0, "✅ Video structural mapping complete.")
-
-                # STAGE 3: AUDIO
-                def audio_cb(frac, msg): 
-                    pct = min(max(frac, 0.0), 1.0)
-                    header2.markdown(flex_header("🎙️ Transcribing Audio...", pct), unsafe_allow_html=True)
-                    p2.progress(pct); lbl2.caption(msg)
-                    
-                engine = "ai" if "AI Audio" in st.session_state.tx_engine else "local"
-                st.session_state.transcript_segments = process_media_file(
-                    st.session_state.media_path, temp_dir, engine=engine, api_key=api_key, models_to_try=models_to_try, is_paid=is_paid_api, progress_cb=audio_cb
-                )
-                audio_cb(1.0, f"✅ {len(st.session_state.transcript_segments)} segments transcribed.")
-
-                # STAGE 4: ALIGNMENT
-                def align_cb(frac, msg): 
-                    pct = min(max(frac, 0.0), 1.0)
-                    header3.markdown(flex_header("🧮 Fusing Math & Generating Insights..." if is_visual else "🧠 Aligning Insights using Gemini...", pct), unsafe_allow_html=True)
-                    p3.progress(pct); lbl3.caption(msg)
-                
-                if is_visual:
-                    final_output = align_video_to_slides(st.session_state.transcript_segments, st.session_state.visual_chapters, st.session_state.slides, api_key, models_to_try, is_paid_api, align_cb)
-                else:
-                    final_output = align_transcript_to_slides(st.session_state.transcript_segments, st.session_state.slides, api_key, selected_model, is_paid_api, align_cb)
-                    
-                st.session_state.final_output = final_output
-                align_cb(1.0, f"✅ Pipeline complete! {len(final_output)} notes generated.")
-                time.sleep(1.2)
-                change_step("studio")
+            header2 = st.empty(); header2.markdown(flex_header("🎙️ Transcribing Audio..."), unsafe_allow_html=True)
+            p2 = st.progress(0.0); lbl2 = st.empty(); st.markdown("<br>", unsafe_allow_html=True)
+            
+            header3 = st.empty()
+            header3.markdown(flex_header("🧮 Fusing Math & Generating Insights..." if is_visual else "🧠 Aligning Insights using Gemini..."), unsafe_allow_html=True)
+            p3 = st.progress(0.0); lbl3 = st.empty(); st.markdown("<br>", unsafe_allow_html=True)
+            
+            if st.button("Cancel / Restart", use_container_width=True):
+                change_step("home")
                 st.rerun()
-            except Exception as e:
-                st.error(f"❌ Pipeline Failed: {e}")
+
+    # ── Execute Real Backend Logic ──
+    try:
+        from core.llm_service import discover_available_models, GEMINI_MODEL_PRIORITY
+        from core.pdf_processor import render_pdf_to_images, extract_slide_text, extract_slide_text_ai, format_slides_for_prompt
+        from core.video_processor import extract_and_detect_transitions, match_keyframes_to_slides
+        from core.audio_processor import process_media_file
+        from core.ai_aligner import align_transcript_to_slides, align_video_to_slides
+
+        temp_dir = get_or_create_temp_dir()
+        api_key = st.session_state.api_key
+        is_paid_api = st.session_state.get("is_paid_api", False)
+        
+        default_model_options = app_config.get("llm", "model_options", {})
+        model_label = st.session_state.get("selected_model_label", list(default_model_options.keys())[0] if default_model_options else "Auto")
+        selected_model = default_model_options.get(model_label, "gemini-3.5-flash")
+        
+        discovered_models = st.session_state.get("discovered_models", [])
+        if is_paid_api and not discovered_models:
+            try:
+                discovered_models = discover_available_models(api_key)
+                st.session_state.discovered_models = discovered_models
+            except Exception:
+                pass
+                
+        models_to_try = [selected_model] if selected_model else []
+        for m in discovered_models:
+            if m not in models_to_try: models_to_try.append(m)
+        for m in GEMINI_MODEL_PRIORITY:
+            if m not in models_to_try: models_to_try.append(m)
+
+        # STAGE 1: PDF
+        def pdf_cb(frac, msg): 
+            pct = min(max(frac, 0.0), 1.0)
+            header1.markdown(flex_header("📄 Extracting Text from Slides...", pct), unsafe_allow_html=True)
+            p1.progress(pct); lbl1.caption(msg)
+            
+        pdf_cb(0.0, "🎨 Rendering slide pages to crisp images...")
+        img_dir = os.path.join(temp_dir, "slide_images")
+        st.session_state.slide_images = render_pdf_to_images(st.session_state.pdf_path, img_dir)
+        st.session_state.active_slide = 1
+
+        if "Native" in st.session_state.pdf_engine:
+            pdf_cb(0.5, "📄 Extracting text natively...")
+            slides = extract_slide_text(st.session_state.pdf_path)
+            empty_count = sum(1 for s in slides if "(No text found" in s["text"])
+            if empty_count > 0: st.warning(f"⚠️ {empty_count} slides had no readable text. If alignment fails, switch 'Slide Extraction' to 'AI Vision' in Settings.")
+        else:
+            def ai_pdf_cb(frac, msg): pdf_cb(0.1 + (frac * 0.9), msg)
+            slides = extract_slide_text_ai(st.session_state.slide_images, api_key, models_to_try, is_paid=is_paid_api, progress_cb=ai_pdf_cb)
+        
+        st.session_state.slides = slides
+        pdf_cb(1.0, f"✅ {len(slides)} slides processed.")
+
+        # STAGE 2: VIDEO
+        if is_visual:
+            def video_cb(frac, msg): 
+                pct = min(max(frac, 0.0), 1.0)
+                header_v.markdown(flex_header("🎞️ Matching Video to Slides...", pct), unsafe_allow_html=True)
+                p_v.progress(pct); lbl_v.caption(msg)
+                
+            slides_text = format_slides_for_prompt(st.session_state.slides)
+            video_frames_dir = os.path.join(temp_dir, "video_frames")
+            chapters = extract_and_detect_transitions(st.session_state.media_path, video_frames_dir, progress_cb=video_cb)
+            
+            def match_cb(frac, msg): video_cb(0.5 + (frac * 0.5), msg)
+            st.session_state.visual_chapters = match_keyframes_to_slides(chapters, st.session_state.slide_images, slides_text, api_key=api_key, progress_cb=match_cb)
+            video_cb(1.0, "✅ Video structural mapping complete.")
+
+        # STAGE 3: AUDIO
+        def audio_cb(frac, msg): 
+            pct = min(max(frac, 0.0), 1.0)
+            header2.markdown(flex_header("🎙️ Transcribing Audio...", pct), unsafe_allow_html=True)
+            p2.progress(pct); lbl2.caption(msg)
+            
+        engine = "ai" if "AI Audio" in st.session_state.tx_engine else "local"
+        st.session_state.transcript_segments = process_media_file(
+            st.session_state.media_path, temp_dir, engine=engine, api_key=api_key, models_to_try=models_to_try, is_paid=is_paid_api, progress_cb=audio_cb
+        )
+        audio_cb(1.0, f"✅ {len(st.session_state.transcript_segments)} segments transcribed.")
+
+        # STAGE 4: ALIGNMENT
+        def align_cb(frac, msg): 
+            pct = min(max(frac, 0.0), 1.0)
+            header3.markdown(flex_header("🧮 Fusing Math & Generating Insights..." if is_visual else "🧠 Aligning Insights using Gemini...", pct), unsafe_allow_html=True)
+            p3.progress(pct); lbl3.caption(msg)
+        
+        if is_visual:
+            final_output = align_video_to_slides(st.session_state.transcript_segments, st.session_state.visual_chapters, st.session_state.slides, api_key, models_to_try, is_paid_api, align_cb)
+        else:
+            final_output = align_transcript_to_slides(st.session_state.transcript_segments, st.session_state.slides, api_key, selected_model, is_paid_api, align_cb)
+            
+        st.session_state.final_output = final_output
+        align_cb(1.0, f"✅ Pipeline complete! {len(final_output)} notes generated.")
+        
+        # Give user time to read the success message, then transition
+        time.sleep(1.0)
+        preflight_placeholder.empty()
+        change_step("studio")
+        st.rerun()
+        
+    except Exception as e:
+        st.error(f"❌ Pipeline Failed: {e}")
 
 def view_studio():
     col_back, col_settings, col_save, col_export = st.columns([2, 2, 2, 2], vertical_alignment="center")
