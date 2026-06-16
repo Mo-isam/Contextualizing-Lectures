@@ -183,20 +183,6 @@ def view_processing():
     st.markdown("<br><br><div class='hero-title' style='font-size: 2.5rem;'>🤖 Analyzing Lecture...</div>", unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # ── SYSTEM PRE-FLIGHT UI ──
-    preflight_placeholder = st.empty()
-    def preflight_cb(msg):
-        preflight_placeholder.markdown(f"<div style='color: #8b949e; font-size: 0.95rem; margin-bottom: 1rem;'>⚙️ <b>System Pre-flight:</b> {msg}</div>", unsafe_allow_html=True)
-
-    from core.system_loader import preload_dependencies
-    preload_dependencies(
-        pipeline_mode=st.session_state.get("pipeline_mode", "audio"),
-        pdf_engine=st.session_state.get("pdf_engine", "Native"),
-        tx_engine=st.session_state.get("tx_engine", "Local"),
-        status_callback=preflight_cb
-    )
-    preflight_placeholder.markdown("<div style='color: #3fb950; font-size: 0.95rem; margin-bottom: 1rem;'>✅ <b>Systems Ready!</b> Starting pipeline...</div>", unsafe_allow_html=True)
-    
     def flex_header(title, pct=0.0):
         return f"""<div style='display: flex; justify-content: space-between; font-weight: 600; margin-bottom: 8px;'>
                      <span>{title}</span>
@@ -204,10 +190,17 @@ def view_processing():
                    </div>"""
 
     is_visual = st.session_state.get("pipeline_mode") == "visual"
+    
+    # 1. Paint the layout FIRST
     _, col_proc, _ = st.columns([1, 2, 1])
     
     with col_proc:
         with st.container(border=True):
+            
+            # Put the preflight placeholder nicely centered at the top of the card
+            preflight_placeholder = st.empty()
+            
+            # Draw the 0% progress bars immediately
             header1 = st.empty(); header1.markdown(flex_header("📄 Extracting Text from Slides..."), unsafe_allow_html=True)
             p1 = st.progress(0.0); lbl1 = st.empty(); st.markdown("<br>", unsafe_allow_html=True)
             
@@ -225,6 +218,30 @@ def view_processing():
             if st.button("Cancel / Restart", use_container_width=True):
                 change_step("home")
                 st.rerun()
+
+    # 2. Define the callback to update the placeholder beautifully
+    def preflight_cb(msg):
+        preflight_placeholder.markdown(
+            f"<div style='text-align: center; color: #8b949e; background: rgba(139,148,158,0.1); padding: 10px; border-radius: 8px; margin-bottom: 1.5rem;'>⚙️ <b>System Pre-flight:</b> {msg}</div>", 
+            unsafe_allow_html=True
+        )
+
+    # 3. Run the heavy imports
+    from core.system_loader import preload_dependencies
+    preload_dependencies(
+        pipeline_mode=st.session_state.get("pipeline_mode", "audio"),
+        pdf_engine=st.session_state.get("pdf_engine", "Native"),
+        tx_engine=st.session_state.get("tx_engine", "Local"),
+        status_callback=preflight_cb
+    )
+    
+    # 4. Show success, wait a split second, then erase the preflight banner
+    preflight_placeholder.markdown(
+        "<div style='text-align: center; color: #3fb950; background: rgba(46,160,67,0.1); padding: 10px; border-radius: 8px; margin-bottom: 1.5rem;'>✅ <b>Systems Ready!</b> Starting pipeline...</div>", 
+        unsafe_allow_html=True
+    )
+    time.sleep(0.6)
+    preflight_placeholder.empty()
 
     # ── Execute Real Backend Logic ──
     try:
