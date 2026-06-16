@@ -239,19 +239,32 @@ def view_upload():
                         
                         # --- Immediate File Saving Logic ---
                         temp_dir = get_or_create_temp_dir()
-                        # PDF Handling
+                        docs_dir = os.path.join(FILES_DIR, "documents")
+                        media_dir = os.path.join(FILES_DIR, "media")
+                        
                         ext = os.path.splitext(pdf_file.name)[1].lower()
-                        target_dir = os.path.join(temp_dir, "presentation") if ext in [".pptx", ".ppt"] else FILES_DIR
-                        saved_path = save_file(pdf_file.getbuffer(), pdf_file.name, target_dir)
+                        
+                        # PDF / PPTX Handling
                         if ext in [".pptx", ".ppt"]:
+                            # 1. Save original PPTX strictly to temp storage (bypass registry)
+                            temp_pptx_dir = os.path.join(temp_dir, "presentation")
+                            saved_pptx_path = save_file(pdf_file.getbuffer(), pdf_file.name, temp_pptx_dir, use_registry=False)
+                            
+                            # 2. Convert to PDF inside temp storage
+                            temp_pdf_path = os.path.join(temp_pptx_dir, "converted.pdf")
+                            convert_pptx_to_pdf(saved_pptx_path, temp_pdf_path)
+                            
+                            # 3. Read the converted bytes and permanently save/register the new PDF
+                            with open(temp_pdf_path, "rb") as f:
+                                converted_bytes = f.read()
                             pdf_name = os.path.splitext(pdf_file.name)[0] + ".pdf"
-                            st.session_state.pdf_path = save_file(b"", pdf_name, FILES_DIR)
-                            convert_pptx_to_pdf(saved_path, st.session_state.pdf_path)
+                            st.session_state.pdf_path = save_file(converted_bytes, pdf_name, docs_dir, use_registry=True)
                         else:
-                            st.session_state.pdf_path = saved_path
+                            # Direct PDF upload
+                            st.session_state.pdf_path = save_file(pdf_file.getbuffer(), pdf_file.name, docs_dir, use_registry=True)
                         
                         # Media Handling
-                        st.session_state.media_path = save_file(media_file.getbuffer(), media_file.name, FILES_DIR)
+                        st.session_state.media_path = save_file(media_file.getbuffer(), media_file.name, media_dir, use_registry=True)
                         st.session_state.pipeline_mode = pipeline_mode
                         
                         run_pipeline_clicked = True
