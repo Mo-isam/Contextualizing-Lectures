@@ -13,7 +13,7 @@ from core.config import app_config
 from ui.assets import load_css
 
 # Import the decoupled views
-from ui.views import view_home, view_load_session, view_upload, view_studio
+from ui.views import view_home, view_load_session, view_upload, view_processing, view_studio
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PAGE CONFIG
@@ -78,5 +78,7 @@ elif st.session_state.step == "load":
     view_load_session()
 elif st.session_state.step == "upload":
     view_upload()
+elif st.session_state.step == "processing":
+    view_processing()
 elif st.session_state.step == "studio":
     view_studio()
