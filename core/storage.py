@@ -32,15 +32,17 @@ def save_session(session_data: LectureSession, temp_dir: str = None) -> str:
     # Replace low-resolution timestamp with UUID to guarantee no file collisions
     session_id = f"{slug}_{uuid.uuid4().hex[:8]}"
 
-    # Files are now natively saved to data_storage/files on upload,
-    # so we just extract the relative path for portable JSON storage.
-    saved_pdf_path = None
-    if session_data.pdf_path:
-        saved_pdf_path = f"files/{os.path.basename(session_data.pdf_path)}"
-        
-    saved_media_path = None
-    if session_data.media_path:
-        saved_media_path = f"files/{os.path.basename(session_data.media_path)}"
+    def _get_rel_path(full_path):
+        if not full_path: return None
+        try:
+            # Converts absolute path to relative path inside data_storage (e.g., "files/documents/file.pdf")
+            return os.path.relpath(full_path, DATA_STORAGE_DIR).replace("\\", "/")
+        except ValueError:
+            return full_path
+
+    # Extract the clean relative path for portable JSON storage.
+    saved_pdf_path = _get_rel_path(session_data.pdf_path)
+    saved_media_path = _get_rel_path(session_data.media_path)
 
     def _to_dict(obj_list):
         if not obj_list: return None
@@ -103,8 +105,8 @@ def load_session(filename: str) -> LectureSession:
     for key in ["pdf_path", "media_path"]:
         val = data.get(key)
         if val and val.startswith("files/"):
-            file_name = os.path.basename(val)
-            data[key] = os.path.join(FILES_DIR, file_name)
+            # os.path.normpath converts 'files/documents/x' safely on both Windows & Mac
+            data[key] = os.path.join(DATA_STORAGE_DIR, os.path.normpath(val))
             
     # Upgrade JSON dicts back to Dataclass objects
     segments = [TranscriptSegment(**item) for item in data.get("transcript_segments", [])] if data.get("transcript_segments") else None
