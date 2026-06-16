@@ -12,9 +12,12 @@ def settings_modal():
     new_is_paid = st.checkbox("💎 Paid / Tier-1 API Key (Disable Pacing)", value=st.session_state.get("is_paid_api", False))
     
     # 2. Model Selection (Reads from dynamic options if they exist)
-    from core.llm_service import DEFAULT_MODEL_OPTIONS
-    opts = st.session_state.get("dynamic_model_options", list(DEFAULT_MODEL_OPTIONS.keys()))
-    current_m = st.session_state.get("selected_model_label", opts[0])
+    # ── Read directly from lightweight config instead of heavy LLM module ──
+    from core.config import app_config
+    default_model_options = app_config.get("llm", "model_options", {"Auto (try all, best quota)": ""})
+    
+    opts = st.session_state.get("dynamic_model_options", list(default_model_options.keys()))
+    current_m = st.session_state.get("selected_model_label", opts[0] if opts else "Auto")
     m_idx = opts.index(current_m) if current_m in opts else 0
     new_model = st.selectbox("Model", opts, index=m_idx)
     
