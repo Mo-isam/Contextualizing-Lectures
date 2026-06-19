@@ -76,6 +76,20 @@ class SaveSessionSchema(BaseModel):
     final_output: List[AlignedNoteSchema]
     pipeline_type: str = "audio"
 
+class ConfigUpdateSchema(BaseModel):
+    is_paid_api: Optional[bool] = None
+    default_model: Optional[str] = None
+    pdf_engine: Optional[str] = None
+    tx_engine: Optional[str] = None
+    whisper_model_size: Optional[str] = None
+    sample_rate: Optional[int] = None
+    min_chunk_duration_sec: Optional[int] = None
+    max_chunk_duration_sec: Optional[int] = None
+    render_zoom: Optional[float] = None
+    matching_strategy: Optional[str] = None
+    frame_sample_rate: Optional[int] = None
+    ssim_threshold: Optional[float] = None
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # REST API ENDPOINTS
@@ -169,6 +183,91 @@ def post_save_session(payload: SaveSessionSchema):
         return {"status": "success", "filename": os.path.basename(session_file)}
     except Exception as e:
         logger.error(f"Error saving session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/config")
+def get_config():
+    """Retrieve all configuration settings."""
+    try:
+        model_options = app_config.get("llm", "model_options", {})
+        model_labels = list(model_options.keys())
+        default_model = app_config.get("ui_defaults", "default_model", "gemini-3.5-flash")
+        
+        selected_model_label = model_labels[0] if model_labels else "Auto"
+        for label, model_id in model_options.items():
+            if model_id == default_model:
+                selected_model_label = label
+                break
+
+        return {
+            "ui_defaults": {
+                "is_paid_api": app_config.get("ui_defaults", "is_paid_api", False),
+                "default_model": default_model,
+                "selected_model_label": selected_model_label,
+                "pdf_engine": app_config.get("ui_defaults", "pdf_engine", "Native (PyMuPDF) - Fast"),
+                "tx_engine": app_config.get("ui_defaults", "tx_engine", "Local Whisper (CPU) - Private"),
+            },
+            "audio": {
+                "whisper_model_size": app_config.get("audio", "whisper_model_size", "base"),
+                "sample_rate": app_config.get("audio", "sample_rate", 16000),
+            },
+            "alignment": {
+                "min_chunk_duration_sec": app_config.get("alignment", "min_chunk_duration_sec", 180),
+                "max_chunk_duration_sec": app_config.get("alignment", "max_chunk_duration_sec", 300),
+            },
+            "pdf": {
+                "render_zoom": app_config.get("pdf", "render_zoom", 2.0),
+            },
+            "video": {
+                "matching_strategy": app_config.get("video", "matching_strategy", "hybrid"),
+                "frame_sample_rate": app_config.get("video", "frame_sample_rate", 1),
+                "ssim_threshold": app_config.get("video", "ssim_threshold", 0.85),
+            },
+            "model_options": model_options,
+        }
+    except Exception as e:
+        logger.error(f"Error fetching configuration: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/config")
+def post_config(payload: ConfigUpdateSchema):
+    """Save configuration updates persistently."""
+    try:
+        if payload.is_paid_api is not None:
+            app_config.set("ui_defaults", "is_paid_api", payload.is_paid_api)
+        if payload.default_model is not None:
+            app_config.set("ui_defaults", "default_model", payload.default_model)
+        if payload.pdf_engine is not None:
+            app_config.set("ui_defaults", "pdf_engine", payload.pdf_engine)
+        if payload.tx_engine is not None:
+            app_config.set("ui_defaults", "tx_engine", payload.tx_engine)
+            
+        if payload.whisper_model_size is not None:
+            app_config.set("audio", "whisper_model_size", payload.whisper_model_size)
+        if payload.sample_rate is not None:
+            app_config.set("audio", "sample_rate", payload.sample_rate)
+            
+        if payload.min_chunk_duration_sec is not None:
+            app_config.set("alignment", "min_chunk_duration_sec", payload.min_chunk_duration_sec)
+        if payload.max_chunk_duration_sec is not None:
+            app_config.set("alignment", "max_chunk_duration_sec", payload.max_chunk_duration_sec)
+            
+        if payload.render_zoom is not None:
+            app_config.set("pdf", "render_zoom", payload.render_zoom)
+            
+        if payload.matching_strategy is not None:
+            app_config.set("video", "matching_strategy", payload.matching_strategy)
+        if payload.frame_sample_rate is not None:
+            app_config.set("video", "frame_sample_rate", payload.frame_sample_rate)
+        if payload.ssim_threshold is not None:
+            app_config.set("video", "ssim_threshold", payload.ssim_threshold)
+
+        app_config.save()
+        return {"status": "success", "message": "Configuration saved successfully."}
+    except Exception as e:
+        logger.error(f"Error saving configuration: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
