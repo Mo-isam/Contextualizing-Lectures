@@ -51,10 +51,43 @@
             return players.length > 0 ? players[players.length - 1] : null;
         }
 
+        // ── Follow Mode State ──
+        // false = Browsing (user navigates freely), true = Synced (audio drives slides)
+        if (parent._followMode === undefined) parent._followMode = false;
+
+        function setFollowMode(on) {
+            parent._followMode = !!on;
+            // Update toggle button appearance
+            var btn = parentDoc.querySelector('.cp-sync');
+            if (btn) {
+                btn.textContent = on ? '🔗' : '🔓';
+                btn.title = on ? 'Synced — slides follow audio (click to unlock)' : 'Browsing — click to sync slides with audio';
+                btn.classList.toggle('cp-sync-active', on);
+            }
+            // Show/hide re-sync pill
+            if (on) updateResyncPill(null); // hide pill when synced
+        }
+
+        function updateResyncPill(slideNum) {
+            var pill = parentDoc.querySelector('.resync-pill');
+            if (!pill) return;
+            if (!slideNum || parent._followMode) {
+                pill.style.display = 'none';
+            } else {
+                var audioEl = getAudioEl();
+                var timeStr = audioEl ? fmt(audioEl.currentTime) : '';
+                pill.innerHTML = '🔗 Sync to S' + slideNum + (timeStr ? ' (' + timeStr + ')' : '') + ' ▸';
+                pill.setAttribute('data-slide', slideNum);
+                pill.style.display = 'inline-flex';
+            }
+        }
+
         // ── Client-Side Slide Switching (no Streamlit reruns) ──
-        function showSlide(n) {
+        // source: 'manual' (user clicked nav), 'auto' (audio follow), 'init' (page load)
+        function showSlide(n, source) {
             n = parseInt(n, 10);
             if (isNaN(n)) return;
+            source = source || 'manual';
 
             // Switch slide panels
             var viewer = parentDoc.querySelector('.slide-viewer');
@@ -82,6 +115,11 @@
 
             // Store in parent so it survives Streamlit reruns
             parent._jsActiveSlide = n;
+
+            // Manual navigation breaks follow mode
+            if (source === 'manual' && parent._followMode) {
+                setFollowMode(false);
+            }
         }
 
         // ── Slide Navigation (Prev / Next / Dropdown) ──
@@ -94,25 +132,39 @@
 
             // Restore JS-driven slide if it exists (survives reruns)
             if (parent._jsActiveSlide) {
-                showSlide(parent._jsActiveSlide);
+                showSlide(parent._jsActiveSlide, 'init');
             }
 
             viewer.addEventListener('click', function(e) {
                 var current = parseInt(viewer.getAttribute('data-active'), 10) || 1;
                 if (e.target.closest('.slide-prev')) {
-                    if (current > 1) showSlide(current - 1);
+                    if (current > 1) showSlide(current - 1, 'manual');
                 } else if (e.target.closest('.slide-next')) {
-                    if (current < total) showSlide(current + 1);
+                    if (current < total) showSlide(current + 1, 'manual');
                 }
             });
 
             var sel = viewer.querySelector('.slide-select');
             if (sel) {
                 sel.addEventListener('change', function() {
-                    showSlide(parseInt(sel.value, 10));
+                    showSlide(parseInt(sel.value, 10), 'manual');
+                });
+            }
+
+            // Re-sync pill click handler
+            var pill = parentDoc.querySelector('.resync-pill');
+            if (pill && !pill._clickInit) {
+                pill._clickInit = true;
+                pill.addEventListener('click', function() {
+                    var slideNum = parseInt(pill.getAttribute('data-slide'), 10);
+                    if (!isNaN(slideNum)) {
+                        showSlide(slideNum, 'auto');
+                        setFollowMode(true);
+                    }
                 });
             }
         }
+
 
 
         // ── Play-at button handler (note cards) ──
@@ -137,6 +189,15 @@
                 };
                 if (audioEl.readyState >= 1) attemptJump();
                 else audioEl.addEventListener('loadedmetadata', attemptJump);
+
+                // Engage follow mode and switch to the correct slide
+                var player = getPlayerEl();
+                if (player) {
+                    var ticks = player.querySelectorAll('.cp-tick');
+                    var slide = slideAtTime(time, ticks);
+                    if (slide) showSlide(slide, 'auto');
+                }
+                setFollowMode(true);
             }
         };
         parentDoc.addEventListener('click', parent._jumpHandler);
@@ -159,14 +220,18 @@
             player._init = true;
             player._audioRef = audioEl;
 
-            var playBtn = player.querySelector('.cp-play');
-            var curEl   = player.querySelector('.cp-current');
-            var durEl   = player.querySelector('.cp-duration');
-            var track   = player.querySelector('.cp-track');
-            var fill    = player.querySelector('.cp-fill');
-            var handle  = player.querySelector('.cp-handle');
-            var volBtn  = player.querySelector('.cp-vol');
-            var ticks   = track.querySelectorAll('.cp-tick');
+            var playBtn  = player.querySelector('.cp-play');
+            var curEl    = player.querySelector('.cp-current');
+            var durEl    = player.querySelector('.cp-duration');
+            var track    = player.querySelector('.cp-track');
+            var fill     = player.querySelector('.cp-fill');
+            var handle   = player.querySelector('.cp-handle');
+            var volBtn   = player.querySelector('.cp-vol');
+            var syncBtn  = player.querySelector('.cp-sync');
+            var ticks    = track.querySelectorAll('.cp-tick');
+
+            // Track the current audio-driven slide to detect boundary crossings
+            var currentAudioSlide = null;
 
             function sync() {
                 if (!audioEl.duration || !isFinite(audioEl.duration)) return;
@@ -182,12 +247,40 @@
                 if (audioEl.paused) { audioEl.play().catch(function(){}); }
                 else { audioEl.pause(); }
             }
-            function onAudioPlay()  { playBtn.textContent = '⏸'; }
+            function onAudioPlay() {
+                playBtn.textContent = '⏸';
+                // Auto-engage follow mode on first play
+                setFollowMode(true);
+            }
             function onAudioPause() { playBtn.textContent = '▶'; }
-            function onTimeUpdate() { sync(); }
+            function onTimeUpdate() {
+                sync();
+                // Detect slide boundary crossing
+                if (ticks.length > 0) {
+                    var newSlide = slideAtTime(audioEl.currentTime, ticks);
+                    if (newSlide && newSlide !== currentAudioSlide) {
+                        currentAudioSlide = newSlide;
+                        if (parent._followMode) {
+                            showSlide(newSlide, 'auto');
+                        } else if (!audioEl.paused) {
+                            updateResyncPill(newSlide);
+                        }
+                    }
+                }
+            }
             function onLoadedMeta() {
                 durEl.textContent = fmt(audioEl.duration);
                 sync();
+            }
+            function onSyncBtnClick(e) {
+                e.preventDefault();
+                if (parent._followMode) {
+                    setFollowMode(false);
+                } else {
+                    // Re-sync: jump slide view to current audio position
+                    if (currentAudioSlide) showSlide(currentAudioSlide, 'auto');
+                    setFollowMode(true);
+                }
             }
 
             // Seek on track click — local seek only, no Streamlit bridge
@@ -242,6 +335,7 @@
             parentDoc.addEventListener('mousemove', onDocMouseMove);
             parentDoc.addEventListener('mouseup', onDocMouseUp);
             if (volBtn) volBtn.addEventListener('click', onVolBtnClick);
+            if (syncBtn) syncBtn.addEventListener('click', onSyncBtnClick);
 
             // ── Cleanup function: removes all listeners so we can safely re-init ──
             player._cleanup = function() {
@@ -255,12 +349,16 @@
                 parentDoc.removeEventListener('mousemove', onDocMouseMove);
                 parentDoc.removeEventListener('mouseup', onDocMouseUp);
                 if (volBtn) volBtn.removeEventListener('click', onVolBtnClick);
+                if (syncBtn) syncBtn.removeEventListener('click', onSyncBtnClick);
             };
 
             // Update play button state if already playing
             if (!audioEl.paused) {
                 playBtn.textContent = '⏸';
             }
+
+            // Restore sync button state after rerun
+            setFollowMode(parent._followMode);
 
             // If duration is already available (cached)
             if (audioEl.duration && isFinite(audioEl.duration)) {

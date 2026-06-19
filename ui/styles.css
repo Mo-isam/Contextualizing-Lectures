@@ -308,7 +308,7 @@ div[data-testid="stElementContainer"]:has(audio) {
   padding: 12px 18px;
 }
 
-.cp-play, .cp-vol {
+.cp-play, .cp-vol, .cp-sync {
   background: none;
   border: none;
   color: #c9d1d9;
@@ -320,9 +320,43 @@ div[data-testid="stElementContainer"]:has(audio) {
   font-family: inherit;
   line-height: 1;
 }
-.cp-play:hover, .cp-vol:hover {
+.cp-play:hover, .cp-vol:hover, .cp-sync:hover {
   background: rgba(100,160,255,0.12);
   color: #e6edf3;
+}
+
+/* Sync button active (synced) state */
+.cp-sync-active {
+  color: #58a6ff !important;
+  background: rgba(88,166,255,0.12);
+}
+
+/* ── Re-sync Floating Pill ───────────────────────────────────────────── */
+.resync-pill {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 6px 16px;
+  background: linear-gradient(135deg, rgba(74,144,226,0.15), rgba(123,94,167,0.15));
+  border: 1px solid rgba(100,160,255,0.3);
+  border-radius: 20px;
+  color: #64b0ff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  animation: resync-pulse 2s ease-in-out infinite;
+  width: fit-content;
+}
+.resync-pill:hover {
+  background: linear-gradient(135deg, rgba(74,144,226,0.3), rgba(123,94,167,0.3));
+  border-color: rgba(100,160,255,0.6);
+  color: #fff;
+}
+@keyframes resync-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(74,144,226,0); }
+  50% { box-shadow: 0 0 12px 2px rgba(74,144,226,0.25); }
 }
 
 .cp-time {

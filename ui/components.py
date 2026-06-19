@@ -125,8 +125,10 @@ def render_audio_player():
         <div class="cp-handle"></div>
         {ticks_html}
       </div>
+      <button class="cp-sync" title="Browsing — click to sync slides with audio">🔓</button>
       <button class="cp-vol" title="Mute / Unmute">🔊</button>
     </div>
+    <div class="resync-pill" style="display:none;"></div>
     """
     st.markdown(player_html, unsafe_allow_html=True)
 
