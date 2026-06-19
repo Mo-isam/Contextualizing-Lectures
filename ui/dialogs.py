@@ -31,11 +31,57 @@ def settings_modal():
     tx_idx = tx_opts.index(st.session_state.get("tx_engine", tx_opts[0])) if st.session_state.get("tx_engine") in tx_opts else 0
     new_tx_engine = st.selectbox("2. Audio Transcription Engine", tx_opts, index=tx_idx)
     
+    # ADVANCED SETTINGS
+    with st.expander("🛠️ Advanced Settings"):
+        adv_tabs = st.tabs(["🔊 Audio", "⏱️ Alignment", "📄 PDF", "🎞️ Video"])
+        
+        with adv_tabs[0]:
+            w_opts = ["tiny", "base", "small", "medium", "large"]
+            w_curr = app_config.get("audio", "whisper_model_size", "base")
+            w_idx = w_opts.index(w_curr) if w_curr in w_opts else 1
+            new_whisper = st.selectbox("Whisper Model Size", w_opts, index=w_idx)
+            
+            new_sample_rate = st.number_input("Audio Sample Rate (Hz)", value=app_config.get("audio", "sample_rate", 16000), step=1000)
+            
+        with adv_tabs[1]:
+            new_min_chunk = st.number_input("Min Chunk Duration (sec)", value=app_config.get("alignment", "min_chunk_duration_sec", 180))
+            new_max_chunk = st.number_input("Max Chunk Duration (sec)", value=app_config.get("alignment", "max_chunk_duration_sec", 300))
+            
+        with adv_tabs[2]:
+            new_render_zoom = st.number_input("Slide Render Zoom (1.0 = standard)", value=float(app_config.get("pdf", "render_zoom", 2.0)), step=0.1)
+            
+        with adv_tabs[3]:
+            v_opts = ["cv", "ai", "hybrid"]
+            v_curr = app_config.get("video", "matching_strategy", "hybrid")
+            v_idx = v_opts.index(v_curr) if v_curr in v_opts else 2
+            new_matching = st.selectbox("Video Matching Strategy", v_opts, index=v_idx)
+            
+            new_frame_rate = st.number_input("Frame Sample Rate (per sec)", value=app_config.get("video", "frame_sample_rate", 1))
+            new_ssim = st.slider("SSIM Threshold (Similarity for cuts)", 0.0, 1.0, float(app_config.get("video", "ssim_threshold", 0.85)))
+            
     if st.button("Save & Close", use_container_width=True, type="primary"):
         st.session_state.is_paid_api = new_is_paid
         st.session_state.selected_model_label = new_model
         st.session_state.pdf_engine = new_pdf_engine
         st.session_state.tx_engine = new_tx_engine
+        
+        # Save ui_defaults to app_config
+        app_config.set("ui_defaults", "is_paid_api", new_is_paid)
+        app_config.set("ui_defaults", "default_model", default_model_options.get(new_model, "gemini-3.5-flash") if default_model_options else "gemini-3.5-flash")
+        app_config.set("ui_defaults", "pdf_engine", new_pdf_engine)
+        app_config.set("ui_defaults", "tx_engine", new_tx_engine)
+        
+        # Save advanced settings
+        app_config.set("audio", "whisper_model_size", new_whisper)
+        app_config.set("audio", "sample_rate", int(new_sample_rate))
+        app_config.set("alignment", "min_chunk_duration_sec", int(new_min_chunk))
+        app_config.set("alignment", "max_chunk_duration_sec", int(new_max_chunk))
+        app_config.set("pdf", "render_zoom", float(new_render_zoom))
+        app_config.set("video", "matching_strategy", new_matching)
+        app_config.set("video", "frame_sample_rate", int(new_frame_rate))
+        app_config.set("video", "ssim_threshold", float(new_ssim))
+        
+        app_config.save()
         st.rerun()
 
 @st.dialog("💾 Save Session")

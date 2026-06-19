@@ -5,8 +5,8 @@ Centralized configuration manager.
 Auto-generates a user-friendly config.yaml file if it doesn't exist.
 """
 import os
-import yaml
 import logging
+from ruamel.yaml import YAML
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +64,14 @@ pdf:
   # Resolution zoom for slide image rendering (1.0 = standard, 2.0 = crisp/high-res)
   render_zoom: 2.0
 
+video:
+  # Matching strategy for video-to-PDF: "cv" (Local Hash), "ai" (Gemini Vision), or "hybrid"
+  matching_strategy: "hybrid"
+  # How many frames to sample per second of video (1 is optimal for slide changes)
+  frame_sample_rate: 1
+  # SSIM threshold (0.0 to 1.0). If similarity drops below this, we count it as a "cut"
+  ssim_threshold: 0.85
+
 ui_defaults:
   # Default API tier (true = Paid, false = Free)
   is_paid_api: false
@@ -77,6 +85,10 @@ ui_defaults:
 
 class AppConfig:
     def __init__(self):
+        self.yaml = YAML()
+        self.yaml.preserve_quotes = True
+        # Explicitly preserve standard block format instead of flow
+        self.yaml.default_flow_style = False
         self.config = self._load_config()
 
     def _load_config(self) -> dict:
@@ -87,7 +99,7 @@ class AppConfig:
         
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                return yaml.safe_load(f) or {}
+                return self.yaml.load(f) or {}
         except Exception as e:
             logger.error(f"Failed to load config.yaml: {e}")
             return {}
@@ -95,6 +107,21 @@ class AppConfig:
     def get(self, section: str, key: str, default=None):
         """Safely fetch a nested configuration value."""
         return self.config.get(section, {}).get(key, default)
+
+    def set(self, section: str, key: str, value):
+        """Update a nested configuration value in memory."""
+        if section not in self.config:
+            self.config[section] = {}
+        self.config[section][key] = value
+
+    def save(self):
+        """Save the current configuration back to config.yaml while preserving comments."""
+        try:
+            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+                self.yaml.dump(self.config, f)
+            logger.info("Successfully saved config.yaml")
+        except Exception as e:
+            logger.error(f"Failed to save config.yaml: {e}")
 
 # Singleton instance to be imported across the app
 app_config = AppConfig()
