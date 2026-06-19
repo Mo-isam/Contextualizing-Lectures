@@ -5,6 +5,7 @@ Utility to load external CSS and JS files and inject them into the Streamlit fro
 """
 import os
 import streamlit as st
+import streamlit.components.v1 as components
 
 UI_DIR = os.path.dirname(__file__)
 
@@ -17,12 +18,11 @@ def load_css():
         st.markdown(f"<style>\n{css}\n</style>", unsafe_allow_html=True)
 
 def inject_jump_script():
-    """Reads scripts.js and injects it as an invisible HTML component."""
+    """Reads scripts.js and injects it as a zero-footprint HTML component."""
     js_path = os.path.join(UI_DIR, "scripts.js")
     if os.path.exists(js_path):
         with open(js_path, "r", encoding="utf-8") as f:
             js = f.read()
-        # Streamlit 1.40+ strictly forbids width=0 and height=0.
-        # We use width="content" and height=1 to bypass validation natively.
-        # Since <script> has no physical DOM, it takes up zero actual UI space!
-        st.iframe(f"<script>\n{js}\n</script>", height=1, width="content")
+        # Use components.html instead of st.iframe to avoid visible artifacts.
+        # height=0 ensures no space is reserved in the layout.
+        components.html(f"<script>\n{js}\n</script>", height=0, scrolling=False)

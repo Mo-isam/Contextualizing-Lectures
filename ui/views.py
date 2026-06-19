@@ -363,6 +363,30 @@ def view_studio():
         
     st.divider()
 
+    # Hidden bridge input for timeline → Python slide switching
+    # JS sets this value when a timeline segment is clicked, triggering a Streamlit rerun
+    st.markdown('<style>[data-testid="stTextInput"]:has(input[aria-label="_timeline_slide_bridge"]) { position:absolute; opacity:0; z-index:-100; pointer-events:none; height:0; margin:0; }</style>', unsafe_allow_html=True)
+    _tl_bridge = st.text_input("_timeline_slide_bridge", value="", key="_tl_slide_bridge", label_visibility="collapsed")
+    if _tl_bridge:
+        try:
+            parts = _tl_bridge.split(":")
+            target_slide = int(parts[0])
+            target_time = float(parts[1]) if len(parts) > 1 else -1.0
+            
+            # Always restore audio position after the rerun, even for same-slide seeks
+            if target_time >= 0:
+                st.session_state._seek_time = target_time
+                st.session_state._auto_play = True
+
+            slide_changed = target_slide != st.session_state.get("active_slide")
+            if slide_changed:
+                st.session_state.active_slide = target_slide
+            
+            # Rerun to render the player with the new data-seek/data-autoplay attributes
+            st.rerun()
+        except Exception:
+            pass
+
     st.markdown('<div class="section-label">🎵 Audio Player — click any note card to jump</div>', unsafe_allow_html=True)
     render_audio_player()
     st.divider()

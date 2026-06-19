@@ -282,3 +282,125 @@ hr { border-color: rgba(255,255,255,0.06) !important; }
 [data-testid="stFileUploader"]:has([data-testid="stUploadedFile"]) button:not([aria-label*="emove"]):not([title*="emove"]):not([aria-label*="elete"]):not([title*="elete"]) {
     display: none !important;
 }
+
+/* ── Hide native Streamlit audio (kept in DOM for playback) ───────── */
+[data-testid="stAudio"], 
+div[data-testid="stElementContainer"]:has(audio) {
+  position: absolute !important;
+  opacity: 0.001 !important;
+  z-index: -100 !important;
+  pointer-events: none !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* ── Custom Audio Player ─────────────────────────────────────────────── */
+.custom-player {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(22,27,34,0.9);
+  border: 1px solid rgba(139,148,158,0.2);
+  border-radius: 12px;
+  padding: 12px 18px;
+}
+
+.cp-play, .cp-vol {
+  background: none;
+  border: none;
+  color: #c9d1d9;
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 8px;
+  transition: background 0.15s, color 0.15s;
+  font-family: inherit;
+  line-height: 1;
+}
+.cp-play:hover, .cp-vol:hover {
+  background: rgba(100,160,255,0.12);
+  color: #e6edf3;
+}
+
+.cp-time {
+  font-size: 0.88rem;
+  color: #8b949e;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  min-width: 100px;
+}
+.cp-current { color: #e6edf3; font-weight: 500; }
+
+.cp-track {
+  flex: 1;
+  position: relative;
+  height: 36px;
+  cursor: pointer;
+}
+
+.cp-track::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  left: 0; right: 0;
+  height: 5px;
+  background: rgba(139,148,158,0.2);
+  border-radius: 3px;
+}
+
+.cp-fill {
+  position: absolute;
+  top: 10px; left: 0;
+  height: 5px;
+  width: 0%;
+  background: linear-gradient(90deg,#4a90e2,#64b0ff);
+  border-radius: 3px;
+  pointer-events: none;
+  z-index: 1;
+  transition: width 0.1s linear;
+}
+
+.cp-handle {
+  position: absolute;
+  top: 12px;
+  left: 0%;
+  width: 13px; height: 13px;
+  transform: translate(-50%,-50%);
+  background: #e6edf3;
+  border: 2px solid #4a90e2;
+  border-radius: 50%;
+  z-index: 4;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  box-shadow: 0 0 6px rgba(74,144,226,0.4);
+}
+.cp-track:hover .cp-handle { opacity: 1; }
+
+.cp-tick {
+  position: absolute;
+  top: 4px;
+  width: 2px;
+  height: 16px;
+  background: rgba(200,210,220,0.4);
+  border-radius: 1px;
+  pointer-events: none;
+  z-index: 2;
+  transform: translateX(-50%);
+}
+
+.cp-label {
+  position: absolute;
+  top: 22px;
+  transform: translateX(-50%);
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: #586069;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 2;
+  letter-spacing: 0.02em;
+}

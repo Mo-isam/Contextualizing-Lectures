@@ -18,15 +18,115 @@ def seconds_to_hms(s: float) -> str:
     return f"{m:02d}:{sec:02d}"
 
 
+def _get_audio_duration(media_path: str) -> float:
+    """Get total audio duration in seconds. Tries mutagen, then ffprobe, then notes fallback."""
+    # Try mutagen (optional dependency)
+    try:
+        import mutagen
+        audio_info = mutagen.File(media_path)
+        if audio_info and audio_info.info:
+            return audio_info.info.length
+    except Exception:
+        pass
+    # Try ffprobe via subprocess (available if ffmpeg is installed)
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", media_path],
+            capture_output=True, text=True, timeout=10
+        )
+        dur = float(result.stdout.strip())
+        if dur > 0:
+            return dur
+    except Exception:
+        pass
+    # Fallback: estimate from final_output max timestamp + small buffer
+    notes = st.session_state.get("final_output", [])
+    if notes:
+        return max(n.timestamp_end for n in notes) * 1.02
+    return 0.0
+
+
+def _compute_slide_boundaries(notes, total_duration: float) -> list[dict]:
+    """
+    Compute contiguous slide segments from AlignedNote list.
+    Returns a list of dicts: {slide_number, start, end, label}
+    """
+    if not notes or total_duration <= 0:
+        return []
+
+    # Group notes by slide_number, find min start and max end per slide
+    slide_ranges = {}
+    for n in notes:
+        s = n.slide_number
+        if s == 0:  # skip general/off-slide notes
+            continue
+        if s not in slide_ranges:
+            slide_ranges[s] = {"start": n.timestamp_start, "end": n.timestamp_end}
+        else:
+            slide_ranges[s]["start"] = min(slide_ranges[s]["start"], n.timestamp_start)
+            slide_ranges[s]["end"] = max(slide_ranges[s]["end"], n.timestamp_end)
+
+    if not slide_ranges:
+        return []
+
+    # Sort by start time and build ordered segment list
+    segments = []
+    for slide_num in sorted(slide_ranges, key=lambda s: slide_ranges[s]["start"]):
+        r = slide_ranges[slide_num]
+        segments.append({
+            "slide_number": slide_num,
+            "start": r["start"],
+            "end": r["end"],
+        })
+
+    return segments
+
+
 def render_audio_player():
-    """Render Streamlit's highly optimized native audio streaming player."""
+    """Render a custom audio player with slide-boundary tick marks built into the seek bar."""
     media_path = st.session_state.get("media_path")
     
-    # Smart Playback: The browser handles MP4/MP3 streaming natively via range requests
-    if media_path and os.path.exists(media_path):
-        st.audio(media_path)
-    else:
+    if not media_path or not os.path.exists(media_path):
         st.warning("⚠️ Audio file could not be found. The 'Play at' buttons will not work.")
+        return
+
+    # Fetch restore state for audio player, pop them so they only apply once after a rerun
+    seek_time = st.session_state.pop("_seek_time", -1.0)
+    auto_play = "true" if st.session_state.pop("_auto_play", False) else "false"
+
+    st.audio(media_path)
+
+    # Build tick marks from final_output
+    notes = st.session_state.get("final_output", [])
+    total_dur = _get_audio_duration(media_path) if notes else 0
+    segments = _compute_slide_boundaries(notes, total_dur) if notes and total_dur > 0 else []
+
+    ticks_html = ""
+    for seg in segments:
+        left_pct = (seg["start"] / total_dur) * 100
+        width_pct = ((seg["end"] - seg["start"]) / total_dur) * 100
+        label_left = left_pct + (width_pct / 2)
+        sn = seg["slide_number"]
+        ticks_html += f'<div class="cp-tick" style="left:{left_pct:.2f}%" data-time="{seg["start"]}" data-slide="{sn}"></div>'
+        ticks_html += f'<div class="cp-label" style="left:{label_left:.2f}%">S{sn}</div>'
+
+    dur_display = seconds_to_hms(total_dur) if total_dur > 0 else "0:00"
+
+    player_html = f"""
+    <div class="custom-player" data-duration="{total_dur:.1f}" data-seek="{seek_time}" data-autoplay="{auto_play}">
+      <button class="cp-play" title="Play / Pause">▶</button>
+      <span class="cp-time"><span class="cp-current">0:00</span> / <span class="cp-duration">{dur_display}</span></span>
+      <div class="cp-track">
+        <div class="cp-fill"></div>
+        <div class="cp-handle"></div>
+        {ticks_html}
+      </div>
+      <button class="cp-vol" title="Mute / Unmute">🔊</button>
+    </div>
+    """
+    st.markdown(player_html, unsafe_allow_html=True)
 
 
 def render_pdf_viewer_images():
