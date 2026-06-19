@@ -75,14 +75,14 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
     const ws = WaveSurfer.create({
       container: containerRef.current,
-      waveColor: "rgba(100, 160, 255, 0.2)",
-      progressColor: "#58a6ff",
-      cursorColor: "#c9d1d9",
+      waveColor: "rgba(148, 163, 184, 0.15)",
+      progressColor: "rgba(59, 130, 246, 0.75)",
+      cursorColor: "#3b82f6",
       cursorWidth: 2,
-      height: 48,
+      height: 38,
       normalize: true,
       barWidth: 2,
-      barGap: 2,
+      barGap: 2.5,
       barRadius: 2,
     });
 
@@ -212,41 +212,78 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
           <span>{formatTime(duration)}</span>
         </div>
 
-        {/* Waveform Wrapper */}
-        <div 
-          className="flex-1 relative cursor-pointer group"
-          onMouseMove={handleMouseMove}
-          onMouseLeave={handleMouseLeave}
-        >
-          <div ref={containerRef} className="w-full relative z-10" />
-
-          {/* Slide Boundary Markers */}
-          {duration > 0 &&
-            slideBoundaries.map((seg) => {
-              const leftPct = (seg.start / duration) * 100;
-              return (
-                <div
-                  key={seg.slide}
-                  className="absolute top-0 bottom-0 w-[1.5px] bg-[#4a90e2]/30 pointer-events-none z-20 wavesurfer-marker"
-                  style={{ left: `${leftPct}%` }}
-                >
-                  {/* Small tooltip slide label */}
-                  <span className="absolute top-[-16px] left-1/2 -translate-x-1/2 text-[8px] font-bold text-gray-500 bg-[#0d1117]/80 px-1 border border-gray-800 rounded">
-                    S{seg.slide}
-                  </span>
-                </div>
-              );
-            })}
-
-          {/* Time Hover tooltip */}
-          {hoverTime && (
-            <div
-              className="absolute top-[-26px] bg-gray-900 border border-gray-800 text-[10px] text-gray-300 px-2 py-0.5 rounded shadow pointer-events-none z-30 font-mono -translate-x-1/2"
-              style={{ left: `${hoverTime.x}px` }}
-            >
-              {hoverTime.time}
+        {/* Timeline Column (Slide Track + Waveform) */}
+        <div className="flex-1 flex flex-col gap-2">
+          {/* Slide Duration Track */}
+          {duration > 0 && slideBoundaries.length > 0 && (
+            <div className="h-6 w-full bg-gray-900/60 rounded-lg relative overflow-hidden border border-gray-800/80 flex select-none">
+              {slideBoundaries.map((seg) => {
+                const startPct = (seg.start / duration) * 100;
+                const durationPct = Math.max(0, Math.min(100 - startPct, ((seg.end - seg.start) / duration) * 100));
+                const isActive = activeSlide === seg.slide;
+                
+                return (
+                  <button
+                    key={seg.slide}
+                    onClick={() => {
+                      if (wavesurferRef.current) {
+                        wavesurferRef.current.setTime(seg.start);
+                        if (!wavesurferRef.current.isPlaying()) {
+                          wavesurferRef.current.play().catch(console.error);
+                        }
+                        onSlideChange(seg.slide);
+                        setFollowMode(true);
+                      }
+                    }}
+                    className={`absolute top-0 bottom-0 text-[10px] font-bold transition-all duration-300 flex items-center justify-center border-r border-gray-800/60 hover:bg-blue-500/10 cursor-pointer overflow-hidden truncate ${
+                      isActive
+                        ? "bg-blue-500/20 text-blue-400 border-b-2 border-b-blue-500 shadow-inner"
+                        : "text-gray-400 bg-gray-950/20"
+                    }`}
+                    style={{
+                      left: `${startPct}%`,
+                      width: `${durationPct}%`,
+                    }}
+                    title={`Slide ${seg.slide} (${formatTime(seg.start)} - ${formatTime(seg.end)})`}
+                  >
+                    <span className="px-1 text-[9px] truncate font-mono">S{seg.slide}</span>
+                  </button>
+                );
+              })}
             </div>
           )}
+
+          {/* Waveform Wrapper */}
+          <div 
+            className="relative cursor-pointer group"
+            onMouseMove={handleMouseMove}
+            onMouseLeave={handleMouseLeave}
+          >
+            <div ref={containerRef} className="w-full relative z-10" />
+
+            {/* Subtle Slide Boundary Markers */}
+            {duration > 0 &&
+              slideBoundaries.map((seg) => {
+                const leftPct = (seg.start / duration) * 100;
+                return (
+                  <div
+                    key={seg.slide}
+                    className="absolute top-0 bottom-0 border-l border-dashed border-blue-500/15 pointer-events-none z-20"
+                    style={{ left: `${leftPct}%` }}
+                  />
+                );
+              })}
+
+            {/* Time Hover tooltip */}
+            {hoverTime && (
+              <div
+                className="absolute top-[-26px] bg-gray-900 border border-gray-800 text-[10px] text-gray-300 px-2 py-0.5 rounded shadow pointer-events-none z-30 font-mono -translate-x-1/2"
+                style={{ left: `${hoverTime.x}px` }}
+              >
+                {hoverTime.time}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Lock Sync Button */}
