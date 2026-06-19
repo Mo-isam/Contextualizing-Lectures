@@ -1,12 +1,13 @@
 import React, { useState } from "react";
 import { HomeView } from "./views/HomeView";
+import { LibraryView } from "./views/LibraryView";
 import { UploadView } from "./views/UploadView";
 import { ProcessingView } from "./views/ProcessingView";
 import { StudioView } from "./views/StudioView";
 import type { LectureSession } from "./types";
 import { GraduationCap } from "lucide-react";
 
-type AppStep = "home" | "upload" | "processing" | "studio";
+type AppStep = "home" | "library" | "upload" | "processing" | "studio";
 
 export const App: React.FC = () => {
   const [step, setStep] = useState<AppStep>("home");
@@ -80,7 +81,8 @@ export const App: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-4 text-xs font-semibold text-gray-500">
-            {step === "home" && <span className="text-blue-400 uppercase tracking-wider bg-blue-500/5 px-3 py-1.5 rounded-lg border border-blue-500/10">Library</span>}
+            {step === "home" && <span className="text-blue-400 uppercase tracking-wider bg-blue-500/5 px-3 py-1.5 rounded-lg border border-blue-500/10">Home</span>}
+            {step === "library" && <span className="text-purple-400 uppercase tracking-wider bg-purple-500/5 px-3 py-1.5 rounded-lg border border-purple-500/10">Library</span>}
             {step === "upload" && <span className="text-blue-400 uppercase tracking-wider bg-blue-500/5 px-3 py-1.5 rounded-lg border border-blue-500/10">Upload</span>}
             {step === "processing" && <span className="text-purple-400 uppercase tracking-wider bg-purple-500/5 px-3 py-1.5 rounded-lg border border-purple-500/10 animate-pulse">Analyzing</span>}
             {step === "studio" && <span className="text-emerald-400 uppercase tracking-wider bg-emerald-500/5 px-3 py-1.5 rounded-lg border border-emerald-500/10">Studio Workspace</span>}
@@ -102,6 +104,13 @@ export const App: React.FC = () => {
         {step === "home" && (
           <HomeView
             onNewSession={handleNewSession}
+            onOpenLibrary={() => setStep("library")}
+          />
+        )}
+
+        {step === "library" && (
+          <LibraryView
+            onBack={() => setStep("home")}
             onLoadSession={handleLoadSession}
           />
         )}
