@@ -1,5 +1,6 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { ArrowLeft, Key, FileText, Video, HelpCircle, Settings, Play } from "lucide-react";
+import { SettingsModal } from "../components/SettingsModal";
 
 interface UploadViewProps {
   onBack: () => void;
@@ -11,15 +12,34 @@ export const UploadView: React.FC<UploadViewProps> = ({ onBack, onStartProcessin
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [pipelineMode, setPipelineMode] = useState<"audio" | "visual">("audio");
-  const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
+  const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
   const [uploading, setUploading] = useState<boolean>(false);
   const [uploadStatus, setUploadStatus] = useState<string>("");
 
-  // Advanced settings defaults
+  // Advanced settings defaults synced with config.yaml
   const [pdfEngine, setPdfEngine] = useState<string>("Native (PyMuPDF) - Fast");
   const [txEngine, setTxEngine] = useState<string>("Local Whisper (CPU) - Private");
   const [selectedModel, setSelectedModel] = useState<string>("gemini-3.5-flash");
   const [isPaidApi, setIsPaidApi] = useState<boolean>(false);
+
+  const fetchConfig = () => {
+    fetch("/api/config")
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch settings.");
+        return res.json();
+      })
+      .then((data) => {
+        setIsPaidApi(data.ui_defaults.is_paid_api);
+        setSelectedModel(data.ui_defaults.default_model);
+        setPdfEngine(data.ui_defaults.pdf_engine);
+        setTxEngine(data.ui_defaults.tx_engine);
+      })
+      .catch((err) => console.error("Error loading config:", err));
+  };
+
+  useEffect(() => {
+    fetchConfig();
+  }, []);
 
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const mediaInputRef = useRef<HTMLInputElement>(null);
@@ -114,12 +134,8 @@ export const UploadView: React.FC<UploadViewProps> = ({ onBack, onStartProcessin
         </button>
 
         <button
-          onClick={() => setShowAdvanced(!showAdvanced)}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-all cursor-pointer ${
-            showAdvanced
-              ? "bg-blue-500/10 border-blue-500/30 text-blue-400"
-              : "bg-gray-900 border-gray-800 text-gray-300 hover:bg-gray-800"
-          }`}
+          onClick={() => setShowSettingsModal(true)}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-900 border border-gray-800 text-gray-300 hover:bg-gray-800 hover:border-gray-700 transition-all cursor-pointer text-sm font-medium"
         >
           <Settings className="w-4 h-4" />
           Settings
@@ -239,63 +255,6 @@ export const UploadView: React.FC<UploadViewProps> = ({ onBack, onStartProcessin
           </div>
         )}
 
-        {/* Advanced Settings Drawer */}
-        {showAdvanced && (
-          <div className="bg-[#0d1117] border border-gray-800 rounded-xl p-5 space-y-4 animate-fade-in">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-blue-400">⚙️ Pipeline Settings</h4>
-            
-            <div className="grid md:grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <label className="text-[11px] text-gray-400 font-bold">Slide Text Extraction</label>
-                <select
-                  value={pdfEngine}
-                  onChange={(e) => setPdfEngine(e.target.value)}
-                  className="w-full bg-[#121820] border border-gray-800 rounded-lg p-2 text-xs text-gray-200 outline-none"
-                >
-                  <option>Native (PyMuPDF) - Fast</option>
-                  <option>AI Vision (Gemini) - High Accuracy</option>
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[11px] text-gray-400 font-bold">Transcription Engine</label>
-                <select
-                  value={txEngine}
-                  onChange={(e) => setTxEngine(e.target.value)}
-                  className="w-full bg-[#121820] border border-gray-800 rounded-lg p-2 text-xs text-gray-200 outline-none"
-                >
-                  <option>Local Whisper (CPU) - Private</option>
-                  <option>AI Audio (Gemini) - Fast/Cloud</option>
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[11px] text-gray-400 font-bold">Default Model ID</label>
-                <select
-                  value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
-                  className="w-full bg-[#121820] border border-gray-800 rounded-lg p-2 text-xs text-gray-200 outline-none"
-                >
-                  <option value="gemini-3.5-flash">Gemini 3.5 Flash (Auto/Priority)</option>
-                  <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-                </select>
-              </div>
-
-              <div className="space-y-2 flex flex-col justify-end">
-                <label className="flex items-center gap-2 select-none cursor-pointer text-xs text-gray-300 pl-1 pb-1">
-                  <input
-                    type="checkbox"
-                    checked={isPaidApi}
-                    onChange={(e) => setIsPaidApi(e.target.checked)}
-                    className="rounded accent-blue-500"
-                  />
-                  <span>Paid API Tier Quota (Disable rate pacing)</span>
-                </label>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Submit */}
         {uploading ? (
           <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex items-center justify-center gap-3">
@@ -312,6 +271,13 @@ export const UploadView: React.FC<UploadViewProps> = ({ onBack, onStartProcessin
           </button>
         )}
       </div>
+
+      {showSettingsModal && (
+        <SettingsModal
+          onClose={() => setShowSettingsModal(false)}
+          onSave={fetchConfig}
+        />
+      )}
     </div>
   );
 };
