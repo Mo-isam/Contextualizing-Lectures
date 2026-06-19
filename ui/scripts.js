@@ -51,6 +51,70 @@
             return players.length > 0 ? players[players.length - 1] : null;
         }
 
+        // ── Client-Side Slide Switching (no Streamlit reruns) ──
+        function showSlide(n) {
+            n = parseInt(n, 10);
+            if (isNaN(n)) return;
+
+            // Switch slide panels
+            var viewer = parentDoc.querySelector('.slide-viewer');
+            if (viewer) {
+                var panels = viewer.querySelectorAll('.slide-panel');
+                panels.forEach(function(p) {
+                    p.classList.toggle('active', parseInt(p.getAttribute('data-slide'), 10) === n);
+                });
+                viewer.setAttribute('data-active', n);
+
+                // Update dropdown
+                var sel = viewer.querySelector('.slide-select');
+                if (sel) sel.value = String(n);
+            }
+
+            // Switch notes groups
+            var notesViewer = parentDoc.querySelector('.notes-viewer');
+            if (notesViewer) {
+                var groups = notesViewer.querySelectorAll('.notes-group');
+                groups.forEach(function(g) {
+                    g.classList.toggle('active', parseInt(g.getAttribute('data-slide'), 10) === n);
+                });
+                notesViewer.setAttribute('data-active', n);
+            }
+
+            // Store in parent so it survives Streamlit reruns
+            parent._jsActiveSlide = n;
+        }
+
+        // ── Slide Navigation (Prev / Next / Dropdown) ──
+        function initSlideNav() {
+            var viewer = parentDoc.querySelector('.slide-viewer');
+            if (!viewer || viewer._navInit) return;
+            viewer._navInit = true;
+
+            var total = parseInt(viewer.getAttribute('data-total'), 10) || 1;
+
+            // Restore JS-driven slide if it exists (survives reruns)
+            if (parent._jsActiveSlide) {
+                showSlide(parent._jsActiveSlide);
+            }
+
+            viewer.addEventListener('click', function(e) {
+                var current = parseInt(viewer.getAttribute('data-active'), 10) || 1;
+                if (e.target.closest('.slide-prev')) {
+                    if (current > 1) showSlide(current - 1);
+                } else if (e.target.closest('.slide-next')) {
+                    if (current < total) showSlide(current + 1);
+                }
+            });
+
+            var sel = viewer.querySelector('.slide-select');
+            if (sel) {
+                sel.addEventListener('change', function() {
+                    showSlide(parseInt(sel.value, 10));
+                });
+            }
+        }
+
+
         // ── Play-at button handler (note cards) ──
         // Always fetches a FRESH audio reference to avoid stale closures after reruns
         if (parent._jumpHandler) {
@@ -228,8 +292,12 @@
 
         // Run initialization loop to catch Streamlit DOM reruns
         if (parent._playerInitLoop) clearInterval(parent._playerInitLoop);
-        parent._playerInitLoop = setInterval(initPlayer, 500);
+        parent._playerInitLoop = setInterval(function() {
+            initPlayer();
+            initSlideNav();
+        }, 500);
         initPlayer();
+        initSlideNav();
 
     } catch(e) {
         console.error("Lecture AI: Script init error:", e);

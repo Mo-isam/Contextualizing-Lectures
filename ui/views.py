@@ -10,7 +10,7 @@ from core.file_utils import save_file, convert_pptx_to_pdf
 from core.storage import load_session, list_saved_sessions, FILES_DIR
 from core.config import app_config
 
-from ui.components import render_audio_player, render_pdf_viewer_images, render_note_card, render_library_card
+from ui.components import render_audio_player, render_pdf_viewer_images, render_all_slides_html, render_note_card, render_all_notes_html, render_library_card
 from ui.dialogs import settings_modal, save_session_modal
 from ui.assets import inject_jump_script
 
@@ -394,11 +394,10 @@ def view_studio():
     col_pdf, col_notes = st.columns([1.5, 1], gap="large")
     with col_pdf:
         st.markdown('<div class="col-label">📄 Lecture Slides</div>', unsafe_allow_html=True)
-        # ── Late Import ──
         from core.pdf_processor import get_pdf_info
         info = get_pdf_info(st.session_state.pdf_path) if st.session_state.pdf_path else {"page_count": 0}
         st.caption(f"📑 {info.get('page_count', 0)} pages")
-        render_pdf_viewer_images()
+        render_all_slides_html()
         
     with col_notes:
         active_slide = st.session_state.get("active_slide", 1)
@@ -410,25 +409,10 @@ def view_studio():
             expander_title = "🎬 Unmapped Video (Intro / Outro)" if mode == "visual" else "🗣️ General / Off-Slide Discussion"
             with st.expander(f"{expander_title} ({len(general_notes)})", expanded=False):
                 for i, note in enumerate(general_notes): render_note_card(note, f"gen_{i}")
-                    
-        filtered = [n for n in notes if n.slide_number == active_slide]
-        st.markdown(f'<div class="col-label" style="margin-top: 10px;">🧠 Slide {active_slide} Notes &nbsp;<span style="color:#484f58;font-weight:400;font-size:0.72rem;text-transform:none;">{len(filtered)} insight(s)</span></div>', unsafe_allow_html=True)
 
         search_q = st.text_input("🔍 Search within this slide's notes", placeholder="Type to filter…", label_visibility="collapsed")
-        if search_q.strip():
-            q = search_q.strip().lower()
-            filtered = [n for n in filtered if q in n.slide_title.lower() or q in n.exact_transcript.lower() or q in n.ai_insight.lower()]
 
         with st.container(height=700, border=False):
-            if filtered:
-                for i, note in enumerate(filtered): render_note_card(note, i)
-            else:
-                st.markdown(f"""<div style="background:rgba(255,255,255,0.01); border:1px dashed rgba(100,160,255,0.15); border-radius:14px; padding:3rem 1.5rem; text-align:center; color:#8b949e;">
-                      <div style="font-size:2rem; margin-bottom:0.5rem;">🧠</div>
-                      <strong style="color:#58a6ff;">No Specific Verbal Insights</strong><br>
-                      <span style="font-size:0.85rem; color:#484f58; display:block; margin-top:6px; line-height:1.5;">
-                        The professor did not explain verbal-only slides or hidden insights for Slide {active_slide} in this chunk.
-                      </span>
-                    </div>""", unsafe_allow_html=True)
+            render_all_notes_html(notes, active_slide, search_query=search_q)
                     
         inject_jump_script()

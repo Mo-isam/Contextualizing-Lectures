@@ -404,3 +404,77 @@ div[data-testid="stElementContainer"]:has(audio) {
   z-index: 2;
   letter-spacing: 0.02em;
 }
+
+/* ── Client-Side Slide Viewer ────────────────────────────────────────── */
+.slide-viewer {
+  position: relative;
+}
+
+.slide-panel {
+  display: none;
+}
+.slide-panel.active {
+  display: block;
+}
+
+.slide-caption {
+  text-align: center;
+  font-size: 0.78rem;
+  color: #8b949e;
+  margin-top: 6px;
+  opacity: 0.7;
+}
+
+.slide-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.slide-prev, .slide-next {
+  flex: 1;
+  background: rgba(120,120,120,0.08);
+  border: 1px solid rgba(100,160,255,0.2);
+  color: #c9d1d9;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.slide-prev:hover, .slide-next:hover {
+  background: rgba(100,160,255,0.12);
+  border-color: rgba(100,160,255,0.4);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(56,139,253,0.2);
+}
+
+.slide-select {
+  flex: 2;
+  background: rgba(22,27,34,0.9);
+  border: 1px solid rgba(100,160,255,0.2);
+  color: #c9d1d9;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: center;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.slide-select:focus {
+  outline: none;
+  border-color: rgba(100,160,255,0.5);
+}
+
+/* ── Client-Side Notes Groups ────────────────────────────────────────── */
+.notes-group {
+  display: none;
+}
+.notes-group.active {
+  display: block;
+}

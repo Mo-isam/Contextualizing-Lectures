@@ -4,6 +4,8 @@ components.py
 Reusable Streamlit UI components for rendering notes, PDF viewers, and audio players.
 """
 import os
+import base64
+import html as html_module
 import streamlit as st
 from core.models import AlignedNote
 
@@ -184,44 +186,149 @@ def render_pdf_viewer_images():
                 st.rerun()
 
 
-def render_note_card(note: AlignedNote, idx: int):
-    """Render a single note card."""
+def render_all_slides_html():
+    """
+    Pre-render ALL slide images as hidden HTML panels with JS-driven navigation.
+    Only the active slide is visible; JS toggles visibility without Streamlit reruns.
+    """
+    images = st.session_state.get("slide_images", [])
+    if not images:
+        st.info("No slide images available.")
+        return
+
+    num_pages = len(images)
+    if "active_slide" not in st.session_state or st.session_state.active_slide is None:
+        st.session_state.active_slide = 1
+    st.session_state.active_slide = max(1, min(st.session_state.active_slide, num_pages))
+    active = st.session_state.active_slide
+
+    # Build all slide panels with base64-embedded images
+    panels = []
+    for i, img_path in enumerate(images):
+        sn = i + 1
+        cls = "slide-panel active" if sn == active else "slide-panel"
+        with open(img_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("ascii")
+        ext = os.path.splitext(img_path)[1].lower()
+        mime = "image/jpeg" if ext in (".jpg", ".jpeg") else "image/png"
+        panels.append(
+            f'<div class="{cls}" data-slide="{sn}">'
+            f'<img src="data:{mime};base64,{b64}" alt="Slide {sn}" style="width:100%;border-radius:8px;">'
+            f'<div class="slide-caption">Showing slide {sn} of {num_pages}</div>'
+            f'</div>'
+        )
+
+    # Build dropdown options
+    opts = []
+    for i in range(1, num_pages + 1):
+        sel = ' selected' if i == active else ''
+        opts.append(f'<option value="{i}"{sel}>Slide {i} / {num_pages}</option>')
+
+    html = (
+        f'<div class="slide-viewer" data-active="{active}" data-total="{num_pages}">'
+        + ''.join(panels)
+        + '<div class="slide-nav">'
+        + '<button class="slide-prev" title="Previous Page">◀ Previous Page</button>'
+        + f'<select class="slide-select">{"" .join(opts)}</select>'
+        + '<button class="slide-next" title="Next Page">Next Page ▶</button>'
+        + '</div>'
+        + '</div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def _note_card_html(note: AlignedNote, idx) -> str:
+    """Return the HTML string for a single note card (no st.markdown call)."""
     slide_num = note.slide_number
-    title     = note.slide_title
+    title     = html_module.escape(note.slide_title)
     t_start   = note.timestamp_start
     t_end     = note.timestamp_end
     ts_label  = f"⏱ {seconds_to_hms(t_start)} → {seconds_to_hms(t_end)}"
 
-    exact_transcript = note.exact_transcript
-    ai_insight       = note.ai_insight
+    exact_transcript = html_module.escape(note.exact_transcript)
+    ai_insight       = html_module.escape(note.ai_insight)
     is_off_topic     = getattr(note, "is_off_topic", False)
 
     if is_off_topic:
-        # Grey Tangent Theme
         badge_html = f'<span class="note-slide-badge" style="background:rgba(139,148,158,0.15); border-color:rgba(139,148,158,0.3); color:#8b949e;">💬 Tangent</span>'
         body_html = f'<div class="note-body" style="font-style: italic; border-left: 2px solid #8b949e; padding-left: 10px; margin-bottom: 12px; color: #8b949e;">"{exact_transcript}"</div>'
-        # Tangents don't have insights by definition
     else:
-        # Standard Blue Theme
         badge_html = f'<span class="note-slide-badge">Slide {slide_num}</span>'
         body_html = f'<div class="note-body" style="font-style: italic; border-left: 2px solid #64b0ff; padding-left: 10px; margin-bottom: 12px; color: #c9d1d9;">"{exact_transcript}"</div>'
         if ai_insight:
             body_html += f'<div style="font-size: 0.8rem; color: #a8c4f0; background: rgba(100,176,255,0.08); padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; border: 1px solid rgba(100,176,255,0.15);">💡 <b>AI Insight:</b> {ai_insight}</div>'
 
-    card_html = f"""
-    <div class="note-card" id="note-card-{idx}">
-      {badge_html}
-      <div class="note-title">{title}</div>
-      {body_html}
-      <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px;">
-        <span class="note-ts">{ts_label}</span>
-        <button class="jump-btn" data-time="{t_start}">
-          ▶&nbsp;Play at {seconds_to_hms(t_start)}
-        </button>
-      </div>
-    </div>
+    return (
+        f'<div class="note-card" id="note-card-{idx}">'
+        f'{badge_html}'
+        f'<div class="note-title">{title}</div>'
+        f'{body_html}'
+        f'<div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px;">'
+        f'<span class="note-ts">{ts_label}</span>'
+        f'<button class="jump-btn" data-time="{t_start}">▶&nbsp;Play at {seconds_to_hms(t_start)}</button>'
+        f'</div></div>'
+    )
+
+
+def render_note_card(note: AlignedNote, idx: int):
+    """Render a single note card."""
+    st.markdown(_note_card_html(note, idx), unsafe_allow_html=True)
+
+
+def render_all_notes_html(notes: list, active_slide: int, search_query: str = ""):
     """
-    st.markdown(card_html, unsafe_allow_html=True)
+    Pre-render ALL note cards grouped by slide number as hidden HTML panels.
+    JS toggles visibility in sync with the slide viewer.
+    """
+    if not notes:
+        return
+
+    # Determine full range of slide numbers (excluding 0 = general)
+    slide_nums = sorted({n.slide_number for n in notes if n.slide_number > 0})
+    # Also include slides from images that may have no notes
+    num_images = len(st.session_state.get("slide_images", []))
+    all_slides = sorted(set(slide_nums) | set(range(1, num_images + 1)))
+
+    q = search_query.strip().lower() if search_query else ""
+
+    groups = []
+    for sn in all_slides:
+        cls = "notes-group active" if sn == active_slide else "notes-group"
+        slide_notes = [n for n in notes if n.slide_number == sn]
+
+        # Apply search filter
+        if q:
+            slide_notes = [
+                n for n in slide_notes
+                if q in n.slide_title.lower()
+                or q in n.exact_transcript.lower()
+                or q in n.ai_insight.lower()
+            ]
+
+        count = len(slide_notes)
+        header = (
+            f'<div class="col-label" style="margin-top:10px;">'
+            f'🧠 Slide {sn} Notes &nbsp;'
+            f'<span style="color:#484f58;font-weight:400;font-size:0.72rem;text-transform:none;">{count} insight(s)</span>'
+            f'</div>'
+        )
+
+        if slide_notes:
+            cards = ''.join(_note_card_html(n, f"s{sn}_{i}") for i, n in enumerate(slide_notes))
+        else:
+            cards = (
+                f'<div style="background:rgba(255,255,255,0.01); border:1px dashed rgba(100,160,255,0.15); '
+                f'border-radius:14px; padding:3rem 1.5rem; text-align:center; color:#8b949e;">'
+                f'<div style="font-size:2rem; margin-bottom:0.5rem;">🧠</div>'
+                f'<strong style="color:#58a6ff;">No Specific Verbal Insights</strong><br>'
+                f'<span style="font-size:0.85rem; color:#484f58; display:block; margin-top:6px; line-height:1.5;">'
+                f'The professor did not explain verbal-only insights for Slide {sn} in this chunk.</span></div>'
+            )
+
+        groups.append(f'<div class="{cls}" data-slide="{sn}">{header}{cards}</div>')
+
+    html = f'<div class="notes-viewer" data-active="{active_slide}">{"" .join(groups)}</div>'
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def step_badge(label: str, status: str) -> str:
