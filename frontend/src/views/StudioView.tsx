@@ -50,6 +50,11 @@ export const StudioView: React.FC<StudioViewProps> = ({ session, onBack, onSaveC
     setSeekTo({ time, timestamp: Date.now() });
   };
 
+  const handleManualSlideChange = (slideNum: number) => {
+    setActiveSlide(slideNum);
+    setFollowMode(false);
+  };
+
   // Execute save session POST
   const handleSaveSession = async () => {
     if (!saveName.trim()) {
@@ -156,7 +161,7 @@ export const StudioView: React.FC<StudioViewProps> = ({ session, onBack, onSaveC
           <SlideViewer
             slideImages={slideImages}
             activeSlide={activeSlide}
-            onSlideChange={setActiveSlide}
+            onSlideChange={handleManualSlideChange}
           />
         </div>
 
