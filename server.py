@@ -319,16 +319,45 @@ async def upload_file(
 # PIPELINE EXECUTION ENGINE (WEBSOCKET)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+class PipelineCancelledError(BaseException):
+    """Exception raised when the pipeline execution is cancelled by client disconnect."""
+    pass
+
 @app.websocket("/api/process/stream")
 async def websocket_process_stream(websocket: WebSocket):
     await websocket.accept()
     logger.info("WebSocket connection established for processing pipeline.")
 
+    # 1. Receive configuration payload first
     try:
-        # Receive configuration payload
         config_data = await websocket.receive_text()
         config = json.loads(config_data)
+    except Exception as e:
+        logger.error(f"Failed to receive config payload: {e}")
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+        return
 
+    # 2. Setup cancellation token and disconnect monitoring task
+    cancellation_token = {"cancelled": False}
+
+    async def monitor_disconnect():
+        try:
+            while not cancellation_token["cancelled"]:
+                # Keep reading to check if client disconnected
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            logger.info("WebSocket client disconnected, signalling cancellation.")
+            cancellation_token["cancelled"] = True
+        except Exception as e:
+            logger.info(f"WebSocket read error: {e}, signalling cancellation.")
+            cancellation_token["cancelled"] = True
+
+    monitor_task = asyncio.create_task(monitor_disconnect())
+
+    try:
         # Config fields
         pdf_path = config.get("pdf_path")
         media_path = config.get("media_path")
@@ -347,6 +376,8 @@ async def websocket_process_stream(websocket: WebSocket):
 
         # Thread-safe async callback builder
         def send_status(stage: str, progress: float, msg: str):
+            if cancellation_token["cancelled"]:
+                raise PipelineCancelledError("Pipeline run aborted because the client disconnected.")
             asyncio.run_coroutine_threadsafe(
                 websocket.send_json({
                     "status": "processing",
@@ -477,18 +508,28 @@ async def websocket_process_stream(websocket: WebSocket):
             "data": result
         })
 
+    except PipelineCancelledError:
+        logger.info("Pipeline execution cancelled: client disconnected.")
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected.")
     except Exception as e:
-        logger.error(f"Error in pipeline process WebSocket: {e}")
-        try:
-            await websocket.send_json({
-                "status": "error",
-                "message": str(e)
-            })
-        except Exception:
-            pass
+        if cancellation_token["cancelled"]:
+            logger.info("Pipeline run aborted due to cancellation token.")
+        else:
+            logger.error(f"Error in pipeline process WebSocket: {e}")
+            try:
+                await websocket.send_json({
+                    "status": "error",
+                    "message": str(e)
+                })
+            except Exception:
+                pass
     finally:
+        monitor_task.cancel()
+        try:
+            await monitor_task
+        except asyncio.CancelledError:
+            pass
         try:
             await websocket.close()
         except Exception:
