@@ -1,7 +1,10 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
-import WaveSurfer from "wavesurfer.js";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { Play, Pause, Volume2, VolumeX, Link2, Link2Off } from "lucide-react";
 import type { AlignedNote } from "../types";
+import { useWaveSurfer } from "../hooks/useWaveSurfer";
+import { calculateSlideBoundaries, getSlideAtTime, formatTime } from "../utils/boundaries";
+import { SlideTimeline } from "./SlideTimeline";
+import { SlideJumpPills } from "./SlideJumpPills";
 
 interface AudioPlayerProps {
   url: string;
@@ -24,194 +27,30 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   seekTo,
   onTimeUpdate,
 }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const wavesurferRef = useRef<WaveSurfer | null>(null);
-  const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [isMuted, setIsMuted] = useState<boolean>(false);
-  const [currentTime, setCurrentTime] = useState<number>(0);
-  const [duration, setDuration] = useState<number>(0);
-  const [slideBoundaries, setSlideBoundaries] = useState<Array<{ slide: number; start: number; end: number }>>([]);
   const [hoverTime, setHoverTime] = useState<{ x: number; time: string } | null>(null);
   const [resyncSlide, setResyncSlide] = useState<number | null>(null);
-  const [timelineHover, setTimelineHover] = useState<{
-    x: number;
-    slide: number;
-    start: number;
-    end: number;
-  } | null>(null);
 
-  const pillsContainerRef = useRef<HTMLDivElement>(null);
+  // Compute slide boundaries from notes using memoization
+  const slideBoundaries = useMemo(() => calculateSlideBoundaries(notes), [notes]);
 
-  // Auto-scroll active pill into view
-  useEffect(() => {
-    if (!pillsContainerRef.current) return;
-    const activePill = pillsContainerRef.current.querySelector('[data-active="true"]');
-    if (activePill) {
-      activePill.scrollIntoView({
-        behavior: "smooth",
-        block: "nearest",
-        inline: "center",
-      });
-    }
-  }, [activeSlide]);
-
-  // Compute slide boundaries from notes
-  useEffect(() => {
-    if (!notes || notes.length === 0) return;
-    
-    const boundaries: Record<number, { start: number; end: number }> = {};
-    notes.forEach((n) => {
-      if (n.slide_number === 0) return; // Skip general notes
-      if (!boundaries[n.slide_number]) {
-        boundaries[n.slide_number] = { start: n.timestamp_start, end: n.timestamp_end };
-      } else {
-        boundaries[n.slide_number].start = Math.min(boundaries[n.slide_number].start, n.timestamp_start);
-        boundaries[n.slide_number].end = Math.max(boundaries[n.slide_number].end, n.timestamp_end);
-      }
-    });
-
-    const segments = Object.entries(boundaries).map(([slide, r]) => ({
-      slide: parseInt(slide),
-      start: r.start,
-      end: r.end,
-    })).sort((a, b) => a.start - b.start);
-
-    // Resolve overlaps by capping the end of each segment at the start of the next
-    const cleanSegments = segments.map((seg, idx) => {
-      const nextSeg = segments[idx + 1];
-      const adjustedEnd = nextSeg ? Math.min(seg.end, nextSeg.start) : seg.end;
-      return {
-        slide: seg.slide,
-        start: seg.start,
-        end: Math.max(seg.start + 0.1, adjustedEnd),
-      };
-    });
-
-    setSlideBoundaries(cleanSegments);
-  }, [notes]);
-
-  // Find slide active at a given timestamp
-  const getSlideAtTime = (time: number) => {
-    let bestSlide = null;
-    for (const seg of slideBoundaries) {
-      if (time >= seg.start) {
-        bestSlide = seg.slide;
-      }
-    }
-    return bestSlide;
-  };
-
-  // Initialize WaveSurfer
-  useEffect(() => {
-    if (!containerRef.current || !url) return;
-
-    let observer: ResizeObserver | null = null;
-    let isCleanedUp = false;
-
-    const initWaveSurfer = () => {
-      if (isCleanedUp || !containerRef.current) return;
-
-      const audio = new Audio();
-      audio.crossOrigin = "anonymous";
-
-      const handleDurationChange = () => {
-        if (audio.duration) {
-          setDuration(audio.duration);
-        }
-      };
-
-      audio.addEventListener("durationchange", handleDurationChange);
-      audio.addEventListener("loadedmetadata", handleDurationChange);
-
-      // Set src after adding listeners to ensure we don't miss early cached events
-      audio.src = url;
-
-      const ws = WaveSurfer.create({
-        container: containerRef.current,
-        media: audio,
-        waveColor: "rgba(148, 163, 184, 0.25)",
-        progressColor: "#3b82f6",
-        cursorColor: "#60a5fa",
-        cursorWidth: 2,
-        height: 48,
-        normalize: true,
-        barWidth: 2,
-        barGap: 3,
-        barRadius: 2,
-      });
-
-      wavesurferRef.current = ws;
-
-      ws.on("ready", () => {
-        setDuration(ws.getDuration());
-      });
-
-      ws.on("audioprocess", () => {
-        const time = ws.getCurrentTime();
-        setCurrentTime(time);
-        onTimeUpdate(time);
-      });
-
-      ws.on("timeupdate", () => {
-        const time = ws.getCurrentTime();
-        setCurrentTime(time);
-        onTimeUpdate(time);
-      });
-
-      ws.on("play", () => setIsPlaying(true));
-      ws.on("pause", () => setIsPlaying(false));
-      ws.on("error", (e) => console.warn("WaveSurfer visual error (falling back to audio element):", e));
-
-      // Trigger duration update if audio element loaded metadata before WaveSurfer was ready
-      if (audio.duration) {
-        setDuration(audio.duration);
-      }
-    };
-
-    const container = containerRef.current;
-    if (container.clientWidth > 0) {
-      initWaveSurfer();
-    } else {
-      // Wait for layout/animation to paint the container before initializing WaveSurfer
-      observer = new ResizeObserver((entries) => {
-        for (const entry of entries) {
-          if (entry.contentRect.width > 0) {
-            initWaveSurfer();
-            observer?.disconnect();
-            observer = null;
-            break;
-          }
-        }
-      });
-      observer.observe(container);
-    }
-
-    return () => {
-      isCleanedUp = true;
-      if (observer) {
-        observer.disconnect();
-      }
-      if (wavesurferRef.current) {
-        const ws = wavesurferRef.current;
-        const media = ws.getMediaElement();
-        if (media) {
-          media.pause();
-          media.src = "";
-          try {
-            (media as HTMLAudioElement).load();
-          } catch (e) {}
-        }
-        ws.destroy();
-        wavesurferRef.current = null;
-      }
-    };
-  }, [url]);
+  // Hook handles WaveSurfer initialization, element observers, play/pause controls, and volume control
+  const {
+    containerRef,
+    wavesurfer,
+    isPlaying,
+    isMuted,
+    currentTime,
+    duration,
+    togglePlay,
+    toggleMute,
+    seekToTime,
+  } = useWaveSurfer({ url, onTimeUpdate });
 
   // Handle slide boundary checking when playhead updates
   useEffect(() => {
     if (duration <= 0) return;
     
-    const newSlide = getSlideAtTime(currentTime);
+    const newSlide = getSlideAtTime(currentTime, slideBoundaries);
     if (newSlide !== null) {
       if (followMode) {
         if (newSlide !== activeSlide) {
@@ -226,47 +65,32 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
         }
       }
     }
-  }, [currentTime, duration, followMode, activeSlide, slideBoundaries]);
+  }, [currentTime, duration, followMode, activeSlide, slideBoundaries, onSlideChange]);
 
   // Handle external seek requests (e.g. from AlignedNote play-at buttons)
   useEffect(() => {
-    if (seekTo && wavesurferRef.current) {
-      wavesurferRef.current.setTime(seekTo.time);
-      if (!wavesurferRef.current.isPlaying()) {
-        wavesurferRef.current.play().catch(console.error);
+    if (seekTo && wavesurfer) {
+      seekToTime(seekTo.time);
+      if (!isPlaying) {
+        wavesurfer.play().catch(console.error);
       }
       setFollowMode(true);
       setResyncSlide(null);
     }
-  }, [seekTo]);
+  }, [seekTo, wavesurfer, seekToTime, isPlaying, setFollowMode]);
 
-  const togglePlay = () => {
-    if (wavesurferRef.current) {
-      wavesurferRef.current.playPause();
+  // Unified seeking and segment clicking handler
+  const handleSegmentClick = useCallback((time: number, slide: number) => {
+    seekToTime(time);
+    if (wavesurfer && !wavesurfer.isPlaying()) {
+      wavesurfer.play().catch(console.error);
     }
-  };
-
-  const toggleMute = () => {
-    if (wavesurferRef.current) {
-      const nextMute = !isMuted;
-      wavesurferRef.current.setMuted(nextMute);
-      setIsMuted(nextMute);
-    }
-  };
-
-  const formatTime = (time: number) => {
-    const s = Math.max(0, Math.floor(time));
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    const sec = s % 60;
-    if (h) {
-      return `${h}:${m.toString().padStart(2, "0")}:${sec.toString().padStart(2, "0")}`;
-    }
-    return `${m}:${sec.toString().padStart(2, "0")}`;
-  };
+    onSlideChange(slide);
+    setFollowMode(true);
+  }, [wavesurfer, seekToTime, onSlideChange, setFollowMode]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!wavesurferRef.current || duration <= 0) return;
+    if (duration <= 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const pct = x / rect.width;
@@ -277,32 +101,6 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   const handleMouseLeave = () => {
     setHoverTime(null);
   };
-
-  const handleTimelineMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (duration <= 0 || slideBoundaries.length === 0) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const pct = x / rect.width;
-    const time = pct * duration;
-
-    const seg = slideBoundaries.find((s) => time >= s.start && time <= s.end);
-    if (seg) {
-      setTimelineHover({
-        x,
-        slide: seg.slide,
-        start: seg.start,
-        end: seg.end,
-      });
-    } else {
-      setTimelineHover(null);
-    }
-  };
-
-  const handleTimelineMouseLeave = () => {
-    setTimelineHover(null);
-  };
-
-
 
   const triggerResync = () => {
     if (resyncSlide !== null) {
@@ -333,55 +131,13 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
         {/* Timeline Column (Slide Track + Waveform) */}
         <div className="flex-1 flex flex-col gap-2">
           {/* Minimal Colored Timeline Strip */}
-          <div 
-            className="relative h-1.5 w-full bg-[#070b0f] rounded-full overflow-hidden border border-gray-800/60 cursor-pointer flex select-none"
-            onMouseMove={handleTimelineMouseMove}
-            onMouseLeave={handleTimelineMouseLeave}
-          >
-            {duration > 0 && slideBoundaries.map((seg) => {
-              const startPct = (seg.start / duration) * 100;
-              const durationPct = Math.max(0, Math.min(100 - startPct, ((seg.end - seg.start) / duration) * 100));
-              const isActive = activeSlide === seg.slide;
-              const isEven = seg.slide % 2 === 0;
-
-              return (
-                <div
-                  key={seg.slide}
-                  onClick={() => {
-                    if (wavesurferRef.current) {
-                      wavesurferRef.current.setTime(seg.start);
-                      if (!wavesurferRef.current.isPlaying()) {
-                        wavesurferRef.current.play().catch(console.error);
-                      }
-                      onSlideChange(seg.slide);
-                      setFollowMode(true);
-                    }
-                  }}
-                  className={`absolute top-0 bottom-0 transition-all duration-200 hover:brightness-125 cursor-pointer ${
-                    isActive
-                      ? "bg-gradient-to-r from-blue-500 to-indigo-500 shadow-[0_0_8px_rgba(59,130,246,0.5)] z-10"
-                      : isEven
-                        ? "bg-slate-800/80"
-                        : "bg-slate-600/50"
-                  }`}
-                  style={{
-                    left: `${startPct}%`,
-                    width: `${durationPct}%`,
-                  }}
-                />
-              );
-            })}
-
-            {/* Hover Tooltip for Slide timeline */}
-            {timelineHover && (
-              <div
-                className="absolute bottom-full mb-2 bg-[#090d14]/95 border border-blue-500/30 text-[10px] text-gray-200 px-2.5 py-1 rounded-lg shadow-xl pointer-events-none z-30 font-mono -translate-x-1/2 whitespace-nowrap"
-                style={{ left: `${timelineHover.x}px` }}
-              >
-                Slide {timelineHover.slide} <span className="text-gray-400 font-sans font-normal">({formatTime(timelineHover.start)} - {formatTime(timelineHover.end)})</span>
-              </div>
-            )}
-          </div>
+          <SlideTimeline
+            duration={duration}
+            slideBoundaries={slideBoundaries}
+            activeSlide={activeSlide}
+            onSegmentClick={handleSegmentClick}
+            formatTime={formatTime}
+          />
 
           {/* Waveform Wrapper */}
           <div 
@@ -453,54 +209,13 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
       {/* Slide Chapter Pills Row */}
       {duration > 0 && slideBoundaries.length > 0 && (
-        <div className="pt-3 border-t border-gray-800/40 flex flex-col gap-2">
-          <div className="text-[10px] uppercase font-bold tracking-wider text-gray-500 select-none pl-1">
-            Jump to Slide Segment
-          </div>
-          <div 
-            ref={pillsContainerRef}
-            className="flex items-center gap-2 overflow-x-auto py-1 px-1 scrollbar-thin scrollbar-thumb-gray-800 scrollbar-track-transparent"
-          >
-            {slideBoundaries.map((seg) => {
-              const isActive = activeSlide === seg.slide;
-              const isCurrentPlayheadSlide = getSlideAtTime(currentTime) === seg.slide;
-              
-              return (
-                <button
-                  key={seg.slide}
-                  data-active={isActive ? "true" : "false"}
-                  onClick={() => {
-                    if (wavesurferRef.current) {
-                      wavesurferRef.current.setTime(seg.start);
-                      if (!wavesurferRef.current.isPlaying()) {
-                        wavesurferRef.current.play().catch(console.error);
-                      }
-                      onSlideChange(seg.slide);
-                      setFollowMode(true);
-                    }
-                  }}
-                  className={`h-7 px-3 flex-shrink-0 flex items-center justify-center rounded-full text-[11px] font-mono font-bold border transition-all cursor-pointer select-none ${
-                    isActive
-                      ? "bg-blue-600/90 text-white border-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.3)] hover:bg-blue-500"
-                      : isCurrentPlayheadSlide
-                        ? "bg-purple-600/10 text-purple-300 border-purple-500/50 hover:bg-purple-600/20"
-                        : "bg-slate-900/80 text-gray-400 border-gray-800/85 hover:bg-slate-800 hover:text-gray-200"
-                  }`}
-                  title={`Slide ${seg.slide} (${formatTime(seg.start)} - ${formatTime(seg.end)})`}
-                >
-                  <span className={`text-[9px] font-sans tracking-wide leading-none mr-1 ${
-                    isActive 
-                      ? "text-blue-200" 
-                      : isCurrentPlayheadSlide 
-                        ? "text-purple-400" 
-                        : "text-gray-500"
-                  }`}>SLIDE</span>
-                  {seg.slide}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <SlideJumpPills
+          slideBoundaries={slideBoundaries}
+          activeSlide={activeSlide}
+          currentTime={currentTime}
+          onPillClick={handleSegmentClick}
+          formatTime={formatTime}
+        />
       )}
     </div>
   );
