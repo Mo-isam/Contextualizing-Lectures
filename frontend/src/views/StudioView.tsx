@@ -110,20 +110,22 @@ export const StudioView: React.FC<StudioViewProps> = ({ session, onBack, onSaveC
         </button>
 
         <div className="flex gap-2">
-          <button
-            onClick={() => setShowSaveDialog(true)}
-            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-lg shadow-blue-600/10"
-          >
-            <Save className="w-4 h-4" />
-            Save Session
-          </button>
+          {!session.session_id && (
+            <button
+              onClick={() => setShowSaveDialog(true)}
+              className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-lg shadow-blue-600/10"
+            >
+              <Save className="w-4 h-4" />
+              Save to Library
+            </button>
+          )}
           
           <button
             onClick={handleExportJSON}
             className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 border border-gray-800 hover:bg-gray-800 text-gray-300 rounded-lg text-xs font-semibold transition-all cursor-pointer"
           >
             <Download className="w-4 h-4" />
-            Export JSON
+            Download Notes (JSON)
           </button>
         </div>
       </div>

@@ -85,6 +85,10 @@ class SaveSessionSchema(BaseModel):
     peaks: Optional[List[float]] = None
     session_id: Optional[str] = None
 
+class UpdateMetadataSchema(BaseModel):
+    session_name: str
+    session_description: str
+
 class ConfigUpdateSchema(BaseModel):
     is_paid_api: Optional[bool] = None
     default_model: Optional[str] = None
@@ -205,6 +209,49 @@ def post_save_session(payload: SaveSessionSchema):
         return {"status": "success", "filename": os.path.basename(session_file)}
     except Exception as e:
         logger.error(f"Error saving session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/api/session/{filename}/metadata")
+def update_session_metadata(filename: str, payload: UpdateMetadataSchema):
+    """Update only the title and description of a session file."""
+    try:
+        from core.storage import SESSIONS_DIR
+        file_path = os.path.join(SESSIONS_DIR, filename)
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="Session file not found.")
+            
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            
+        data["session_name"] = payload.session_name
+        data["session_description"] = payload.session_description
+        data["timestamp"] = time.time()
+        
+        # Write back atomically
+        tmp_file = f"{file_path}.tmp"
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_file, file_path)
+        
+        return {"status": "success", "message": "Session metadata updated."}
+    except Exception as e:
+        logger.error(f"Error updating session metadata: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/session/{filename}")
+def delete_session(filename: str):
+    """Delete a specific session JSON file from storage."""
+    try:
+        from core.storage import SESSIONS_DIR
+        file_path = os.path.join(SESSIONS_DIR, filename)
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="Session file not found.")
+        os.remove(file_path)
+        return {"status": "success", "message": "Session deleted."}
+    except Exception as e:
+        logger.error(f"Error deleting session: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

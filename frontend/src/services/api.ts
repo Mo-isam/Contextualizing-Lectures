@@ -101,6 +101,36 @@ export const ApiService = {
   },
 
   /**
+   * Update name and description of a session.
+   */
+  async updateSessionMetadata(filename: string, name: string, description: string): Promise<{ status: string; message: string }> {
+    const res = await fetch(`/api/session/${filename}/metadata`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_name: name, session_description: description }),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(err || "Failed to update session metadata");
+    }
+    return res.json();
+  },
+
+  /**
+   * Delete a session.
+   */
+  async deleteSession(filename: string): Promise<{ status: string; message: string }> {
+    const res = await fetch(`/api/session/${filename}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(err || "Failed to delete session");
+    }
+    return res.json();
+  },
+
+  /**
    * Retrieve configuration settings.
    */
   async getConfig(): Promise<ApiConfig> {
