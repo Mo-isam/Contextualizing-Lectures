@@ -138,7 +138,7 @@ export const StudioView: React.FC<StudioViewProps> = ({ session, onBack, onSaveC
           🎵 Lecture Media Timeline
         </div>
         <AudioPlayer
-          url={`/data/${session.media_path}`}
+          url={`http://${window.location.hostname}:8000/data/${session.media_path}`}
           notes={notes}
           activeSlide={activeSlide}
           onSlideChange={setActiveSlide}

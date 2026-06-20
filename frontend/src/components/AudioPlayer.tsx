@@ -73,8 +73,13 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   useEffect(() => {
     if (!containerRef.current || !url) return;
 
+    const audio = new Audio();
+    audio.src = url;
+    audio.crossOrigin = "anonymous";
+
     const ws = WaveSurfer.create({
       container: containerRef.current,
+      media: audio,
       waveColor: "rgba(148, 163, 184, 0.15)",
       progressColor: "rgba(59, 130, 246, 0.75)",
       cursorColor: "#3b82f6",
@@ -87,6 +92,14 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     });
 
     wavesurferRef.current = ws;
+
+    const handleDurationChange = () => {
+      if (audio.duration) {
+        setDuration(audio.duration);
+      }
+    };
+    audio.addEventListener("durationchange", handleDurationChange);
+    audio.addEventListener("loadedmetadata", handleDurationChange);
 
     ws.on("ready", () => {
       setDuration(ws.getDuration());
@@ -106,11 +119,11 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
     ws.on("play", () => setIsPlaying(true));
     ws.on("pause", () => setIsPlaying(false));
-
-    // Load the audio source
-    ws.load(url);
+    ws.on("error", (e) => console.warn("WaveSurfer visual error (falling back to audio element):", e));
 
     return () => {
+      audio.removeEventListener("durationchange", handleDurationChange);
+      audio.removeEventListener("loadedmetadata", handleDurationChange);
       ws.destroy();
     };
   }, [url]);
