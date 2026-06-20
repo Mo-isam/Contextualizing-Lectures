@@ -5,6 +5,8 @@ import uuid
 import time
 import logging
 import asyncio
+import threading
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 if sys.platform == 'win32':
@@ -19,6 +21,7 @@ from core.storage import save_session, load_session, list_saved_sessions, DATA_S
 from core.file_utils import save_file, convert_pptx_to_pdf
 from core.models import TranscriptSegment, Slide, AlignedNote, LectureSession
 from core.config import app_config
+from core.pipeline import PipelineJob, PipelineCancelledError
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -123,19 +126,19 @@ def get_session(filename: str):
         # Convert back absolute paths to portable relative paths for frontend usage
         def to_rel_path(abs_path):
             if not abs_path: return ""
-            return os.path.relpath(abs_path, DATA_STORAGE_DIR).replace("\\", "/")
+            return Path(abs_path).relative_to(DATA_STORAGE_DIR).as_posix()
 
         # Render slide PDF to images for display in React viewer
         from core.pdf_processor import render_pdf_to_images
         sess_id = session.session_id or uuid.uuid4().hex[:8]
-        session_temp_dir = os.path.join(TMP_DIR, f"session_{sess_id}")
-        os.makedirs(session_temp_dir, exist_ok=True)
-        img_dir = os.path.join(session_temp_dir, "slide_images")
+        session_temp_dir = Path(TMP_DIR) / f"session_{sess_id}"
+        session_temp_dir.mkdir(parents=True, exist_ok=True)
+        img_dir = session_temp_dir / "slide_images"
         
         slide_images = []
-        if session.pdf_path and os.path.exists(session.pdf_path):
-            slide_images = render_pdf_to_images(session.pdf_path, img_dir)
-        rel_slide_images = [os.path.relpath(p, TMP_DIR).replace("\\", "/") for p in slide_images]
+        if session.pdf_path and Path(session.pdf_path).exists():
+            slide_images = render_pdf_to_images(session.pdf_path, str(img_dir))
+        rel_slide_images = [Path(p).relative_to(TMP_DIR).as_posix() for p in slide_images]
 
         return {
             "session_name": session.session_name,
@@ -162,8 +165,8 @@ def post_save_session(payload: SaveSessionSchema):
     """Save session details to persistent storage."""
     try:
         # Convert relative paths back to absolute paths
-        abs_pdf = os.path.join(DATA_STORAGE_DIR, os.path.normpath(payload.pdf_path))
-        abs_media = os.path.join(DATA_STORAGE_DIR, os.path.normpath(payload.media_path))
+        abs_pdf = str(Path(DATA_STORAGE_DIR) / os.path.normpath(payload.pdf_path))
+        abs_media = str(Path(DATA_STORAGE_DIR) / os.path.normpath(payload.media_path))
 
         # Reconstruct dataclasses
         segments = [TranscriptSegment(**s.dict()) for s in payload.transcript_segments]
@@ -308,7 +311,7 @@ async def upload_file(
             target_dir = os.path.join(FILES_DIR, "media")
             saved_path = save_file(contents, file.filename, target_dir, use_registry=True)
 
-        rel_path = os.path.relpath(saved_path, DATA_STORAGE_DIR).replace("\\", "/")
+        rel_path = Path(saved_path).relative_to(DATA_STORAGE_DIR).as_posix()
         return {
             "filename": file.filename,
             "absolute_path": saved_path,
@@ -322,10 +325,6 @@ async def upload_file(
 # ═══════════════════════════════════════════════════════════════════════════════
 # PIPELINE EXECUTION ENGINE (WEBSOCKET)
 # ═══════════════════════════════════════════════════════════════════════════════
-
-class PipelineCancelledError(BaseException):
-    """Exception raised when the pipeline execution is cancelled by client disconnect."""
-    pass
 
 @app.websocket("/api/process/stream")
 async def websocket_process_stream(websocket: WebSocket):
@@ -344,20 +343,20 @@ async def websocket_process_stream(websocket: WebSocket):
             pass
         return
 
-    # 2. Setup cancellation token and disconnect monitoring task
-    cancellation_token = {"cancelled": False}
+    # 2. Setup cancellation event and disconnect monitoring task
+    cancellation_event = threading.Event()
 
     async def monitor_disconnect():
         try:
-            while not cancellation_token["cancelled"]:
+            while not cancellation_event.is_set():
                 # Keep reading to check if client disconnected
                 await websocket.receive_text()
         except WebSocketDisconnect:
             logger.info("WebSocket client disconnected, signalling cancellation.")
-            cancellation_token["cancelled"] = True
+            cancellation_event.set()
         except Exception as e:
             logger.info(f"WebSocket read error: {e}, signalling cancellation.")
-            cancellation_token["cancelled"] = True
+            cancellation_event.set()
 
     monitor_task = asyncio.create_task(monitor_disconnect())
 
@@ -372,15 +371,11 @@ async def websocket_process_stream(websocket: WebSocket):
         api_key = config.get("api_key", "")
         is_paid_api = config.get("is_paid_api", False)
 
-        # Resolve paths to absolute paths
-        abs_pdf_path = os.path.join(DATA_STORAGE_DIR, os.path.normpath(pdf_path))
-        abs_media_path = os.path.join(DATA_STORAGE_DIR, os.path.normpath(media_path))
-
         loop = asyncio.get_running_loop()
 
         # Thread-safe async callback builder
         def send_status(stage: str, progress: float, msg: str):
-            if cancellation_token["cancelled"]:
+            if cancellation_event.is_set():
                 raise PipelineCancelledError("Pipeline run aborted because the client disconnected.")
             asyncio.run_coroutine_threadsafe(
                 websocket.send_json({
@@ -392,119 +387,22 @@ async def websocket_process_stream(websocket: WebSocket):
                 loop
             )
 
-        # Blocking pipeline runner to run in thread pool
-        def run_pipeline():
-            # Late imports inside the worker thread to conserve boot RAM
-            from core.system_loader import preload_dependencies
-            from core.llm_service import discover_available_models, GEMINI_MODEL_PRIORITY
-            from core.pdf_processor import render_pdf_to_images, extract_slide_text, extract_slide_text_ai, format_slides_for_prompt
-            from core.video_processor import extract_and_detect_transitions, match_keyframes_to_slides
-            from core.audio_processor import process_media_file
-            from core.ai_aligner import align_transcript_to_slides, align_video_to_slides
-
-            # Create session temp folder
-            session_temp_dir = os.path.join(TMP_DIR, f"session_{uuid.uuid4().hex[:8]}")
-            os.makedirs(session_temp_dir, exist_ok=True)
-
-            # STAGE 0: Preflight checks
-            send_status("preflight", 0.05, "Performing pre-flight checklist...")
-            preload_dependencies(
-                pipeline_mode=pipeline_mode,
-                pdf_engine=pdf_engine,
-                tx_engine=tx_engine,
-                status_callback=lambda msg: send_status("preflight", 0.1, msg)
-            )
-            send_status("preflight", 1.0, "Ready!")
-
-            # Model prioritization mapping
-            discovered_models = []
-            if is_paid_api and api_key:
-                try:
-                    discovered_models = discover_available_models(api_key)
-                except Exception:
-                    pass
-            models_to_try = [selected_model] if selected_model else []
-            for m in discovered_models:
-                if m not in models_to_try: models_to_try.append(m)
-            for m in GEMINI_MODEL_PRIORITY:
-                if m not in models_to_try: models_to_try.append(m)
-
-            # STAGE 1: PDF Processing
-            send_status("pdf", 0.05, "Rendering slide PDF to images...")
-            img_dir = os.path.join(session_temp_dir, "slide_images")
-            slide_images = render_pdf_to_images(abs_pdf_path, img_dir)
-            
-            # Send image folder name relative to tmp so frontend can serve them directly
-            rel_img_dir = os.path.relpath(img_dir, TMP_DIR).replace("\\", "/")
-            rel_slide_images = [os.path.relpath(p, TMP_DIR).replace("\\", "/") for p in slide_images]
-
-            send_status("pdf", 0.3, "Extracting text content from slides...")
-            if "Native" in pdf_engine:
-                slides = extract_slide_text(abs_pdf_path)
-            else:
-                slides = extract_slide_text_ai(
-                    slide_images, api_key, models_to_try, 
-                    is_paid=is_paid_api, 
-                    progress_cb=lambda frac, msg: send_status("pdf", 0.3 + frac * 0.7, msg)
-                )
-            send_status("pdf", 1.0, f"Extracted text from {len(slides)} slides.")
-
-            # STAGE 2: Video Transition Detection (if applicable)
-            visual_chapters = []
-            if pipeline_mode == "visual":
-                send_status("video", 0.05, "Analyzing video timeline for slide cuts...")
-                video_frames_dir = os.path.join(session_temp_dir, "video_frames")
-                
-                chapters = extract_and_detect_transitions(
-                    abs_media_path, video_frames_dir,
-                    progress_cb=lambda frac, msg: send_status("video", 0.05 + frac * 0.45, msg)
-                )
-                
-                send_status("video", 0.5, "Geometric matching keyframes to PDF slides...")
-                slides_text = format_slides_for_prompt(slides)
-                visual_chapters = match_keyframes_to_slides(
-                    chapters, slide_images, slides_text, api_key=api_key,
-                    progress_cb=lambda frac, msg: send_status("video", 0.5 + frac * 0.5, msg)
-                )
-                send_status("video", 1.0, "Video keyframe transition mapping complete.")
-
-            # STAGE 3: Audio Transcription
-            send_status("audio", 0.05, "Starting audio transcribing...")
-            engine_mode = "ai" if "AI Audio" in tx_engine else "local"
-            
-            transcript_segments = process_media_file(
-                abs_media_path, session_temp_dir, 
-                engine=engine_mode, api_key=api_key, 
-                models_to_try=models_to_try, is_paid=is_paid_api,
-                progress_cb=lambda frac, msg: send_status("audio", frac, msg)
-            )
-            send_status("audio", 1.0, "Transcribing complete.")
-
-            # STAGE 4: Fusion & Alignment
-            send_status("alignment", 0.05, "Fusing temporal cues and generating semantic note alignments...")
-            
-            if pipeline_mode == "visual":
-                final_output = align_video_to_slides(
-                    transcript_segments, visual_chapters, slides, 
-                    api_key, models_to_try, is_paid_api,
-                    progress_cb=lambda frac, msg: send_status("alignment", frac, msg)
-                )
-            else:
-                final_output = align_transcript_to_slides(
-                    transcript_segments, slides, api_key, selected_model, is_paid_api,
-                    progress_cb=lambda frac, msg: send_status("alignment", frac, msg)
-                )
-            send_status("alignment", 1.0, "Alignment complete!")
-
-            return {
-                "transcript_segments": [t.__dict__ for t in transcript_segments],
-                "slides": [s.__dict__ for s in slides],
-                "final_output": [n.__dict__ for n in final_output],
-                "slide_images": rel_slide_images
-            }
+        # Initialize the decoupled job
+        job = PipelineJob(
+            pdf_path=pdf_path,
+            media_path=media_path,
+            pipeline_mode=pipeline_mode,
+            pdf_engine=pdf_engine,
+            tx_engine=tx_engine,
+            selected_model=selected_model,
+            api_key=api_key,
+            is_paid_api=is_paid_api,
+            status_callback=send_status,
+            cancellation_event=cancellation_event
+        )
 
         # Run blocking thread pipeline run
-        result = await loop.run_in_executor(None, run_pipeline)
+        result = await loop.run_in_executor(None, job.run)
 
         # Return final data payload over WS
         await websocket.send_json({
@@ -517,8 +415,8 @@ async def websocket_process_stream(websocket: WebSocket):
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected.")
     except Exception as e:
-        if cancellation_token["cancelled"]:
-            logger.info("Pipeline run aborted due to cancellation token.")
+        if cancellation_event.is_set():
+            logger.info("Pipeline run aborted due to cancellation event.")
         else:
             logger.error(f"Error in pipeline process WebSocket: {e}")
             try:
@@ -529,6 +427,7 @@ async def websocket_process_stream(websocket: WebSocket):
             except Exception:
                 pass
     finally:
+        cancellation_event.set()  # Ensure event is set to break monitor loop
         monitor_task.cancel()
         try:
             await monitor_task
