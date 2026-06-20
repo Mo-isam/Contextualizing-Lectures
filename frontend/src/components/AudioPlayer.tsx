@@ -80,14 +80,14 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     const ws = WaveSurfer.create({
       container: containerRef.current,
       media: audio,
-      waveColor: "rgba(148, 163, 184, 0.15)",
-      progressColor: "rgba(59, 130, 246, 0.75)",
-      cursorColor: "#3b82f6",
+      waveColor: "rgba(148, 163, 184, 0.25)",
+      progressColor: "#3b82f6",
+      cursorColor: "#60a5fa",
       cursorWidth: 2,
-      height: 38,
+      height: 48,
       normalize: true,
       barWidth: 2,
-      barGap: 2.5,
+      barGap: 3,
       barRadius: 2,
     });
 
@@ -122,6 +122,11 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     ws.on("error", (e) => console.warn("WaveSurfer visual error (falling back to audio element):", e));
 
     return () => {
+      audio.pause();
+      audio.src = "";
+      try {
+        audio.load();
+      } catch (err) {}
       audio.removeEventListener("durationchange", handleDurationChange);
       audio.removeEventListener("loadedmetadata", handleDurationChange);
       ws.destroy();
@@ -208,7 +213,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   };
 
   return (
-    <div className="space-y-3 w-full bg-[#121820]/90 border border-gray-800 rounded-xl p-4 shadow-md">
+    <div className="space-y-3 w-full bg-[#0d131a] border border-gray-800/80 rounded-xl p-4 shadow-lg shadow-black/40">
       <div className="flex items-center gap-4">
         {/* Play Button */}
         <button
@@ -229,11 +234,12 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
         <div className="flex-1 flex flex-col gap-2">
           {/* Slide Duration Track */}
           {duration > 0 && slideBoundaries.length > 0 && (
-            <div className="h-6 w-full bg-gray-900/60 rounded-lg relative overflow-hidden border border-gray-800/80 flex select-none">
+            <div className="h-6 w-full bg-[#070b0f] rounded-lg relative overflow-hidden border border-gray-800/60 flex select-none">
               {slideBoundaries.map((seg) => {
                 const startPct = (seg.start / duration) * 100;
                 const durationPct = Math.max(0, Math.min(100 - startPct, ((seg.end - seg.start) / duration) * 100));
                 const isActive = activeSlide === seg.slide;
+                const isEven = seg.slide % 2 === 0;
                 
                 return (
                   <button
@@ -248,10 +254,12 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
                         setFollowMode(true);
                       }
                     }}
-                    className={`absolute top-0 bottom-0 text-[10px] font-bold transition-all duration-300 flex items-center justify-center border-r border-gray-800/60 hover:bg-blue-500/10 cursor-pointer overflow-hidden truncate ${
+                    className={`absolute top-0 bottom-0 text-[10px] font-bold transition-all duration-300 flex items-center justify-center border-r border-gray-800/40 hover:bg-blue-500/10 cursor-pointer overflow-hidden truncate ${
                       isActive
-                        ? "bg-blue-500/20 text-blue-400 border-b-2 border-b-blue-500 shadow-inner"
-                        : "text-gray-400 bg-gray-950/20"
+                        ? "bg-gradient-to-r from-blue-500/20 to-indigo-500/20 text-blue-400 border-b-2 border-blue-500 shadow-[inset_0_0_10px_rgba(59,130,246,0.15)]"
+                        : isEven
+                          ? "text-gray-400 bg-slate-800/30"
+                          : "text-gray-400 bg-slate-700/20"
                     }`}
                     style={{
                       left: `${startPct}%`,
@@ -259,7 +267,11 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
                     }}
                     title={`Slide ${seg.slide} (${formatTime(seg.start)} - ${formatTime(seg.end)})`}
                   >
-                    <span className="px-1 text-[9px] truncate font-mono">S{seg.slide}</span>
+                    {durationPct >= 3.5 ? (
+                      <span className="px-1 text-[9px] truncate font-mono">Slide {seg.slide}</span>
+                    ) : durationPct >= 1.5 ? (
+                      <span className="px-1 text-[9px] truncate font-mono">{seg.slide}</span>
+                    ) : null}
                   </button>
                 );
               })}
