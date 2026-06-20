@@ -361,8 +361,8 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
                     isActive
                       ? "bg-gradient-to-r from-blue-500 to-indigo-500 shadow-[0_0_8px_rgba(59,130,246,0.5)] z-10"
                       : isEven
-                        ? "bg-slate-700/60"
-                        : "bg-slate-600/40"
+                        ? "bg-slate-600/55"
+                        : "bg-slate-800/55"
                   }`}
                   style={{
                     left: `${startPct}%`,

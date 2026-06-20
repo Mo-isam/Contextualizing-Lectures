@@ -541,4 +541,18 @@ async def websocket_process_stream(websocket: WebSocket):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import sys
+
+    if sys.platform == 'win32':
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+    config = uvicorn.Config(app=app, host="0.0.0.0", port=8000, loop="asyncio")
+    server = uvicorn.Server(config)
+
+    if sys.platform == 'win32':
+        # Manually create and set the Selector loop to bypass Uvicorn loop overrides
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(server.serve())
+    else:
+        uvicorn.run(app, host="0.0.0.0", port=8000)
