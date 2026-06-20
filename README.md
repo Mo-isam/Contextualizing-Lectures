@@ -50,26 +50,37 @@ Contextualizing-Lectures-React/
 Ensure you have **FFmpeg** installed on your system's PATH. This is required for extracting audio from video files and chunking media.
 
 ### 2. Backend Setup
-1. Install Python dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-2. Start the FastAPI server:
-   ```bash
-   python server.py
-   ```
-   *(The server runs on `http://127.0.0.1:8000`)*
+Install Python dependencies:
+```bash
+pip install -r requirements.txt
+```
 
-### 3. Frontend Setup
-1. Open a new terminal and navigate to the frontend directory:
+### 3. Running the Development Servers
+
+You can run both the FastAPI backend and the React frontend dev servers concurrently with a single command from the project root:
+```bash
+python run.py
+```
+*(This script will automatically verify that frontend dependencies are installed, boot both servers, merge their console outputs with color-coded prefixes, and safely terminate all background processes on **Ctrl+C**).*
+
+---
+
+### 💡 Alternative Manual Setup
+If you prefer running the servers in separate terminals for debugging, follow these steps:
+
+#### A. Start the Backend Server
+```bash
+python server.py
+```
+*(The API server runs on `http://127.0.0.1:8000`)*
+
+#### B. Start the Frontend Server
+1. Navigate to the frontend directory and install dependencies:
    ```bash
    cd frontend
-   ```
-2. Install Node dependencies:
-   ```bash
    npm install
    ```
-3. Start the Vite React development server:
+2. Start the Vite React dev server:
    ```bash
    npm run dev
    ```
