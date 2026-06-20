@@ -113,63 +113,105 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   useEffect(() => {
     if (!containerRef.current || !url) return;
 
-    const audio = new Audio();
-    audio.src = url;
-    audio.crossOrigin = "anonymous";
+    let observer: ResizeObserver | null = null;
+    let isCleanedUp = false;
 
-    const ws = WaveSurfer.create({
-      container: containerRef.current,
-      media: audio,
-      waveColor: "rgba(148, 163, 184, 0.25)",
-      progressColor: "#3b82f6",
-      cursorColor: "#60a5fa",
-      cursorWidth: 2,
-      height: 48,
-      normalize: true,
-      barWidth: 2,
-      barGap: 3,
-      barRadius: 2,
-    });
+    const initWaveSurfer = () => {
+      if (isCleanedUp || !containerRef.current) return;
 
-    wavesurferRef.current = ws;
+      const audio = new Audio();
+      audio.crossOrigin = "anonymous";
 
-    const handleDurationChange = () => {
+      const handleDurationChange = () => {
+        if (audio.duration) {
+          setDuration(audio.duration);
+        }
+      };
+
+      audio.addEventListener("durationchange", handleDurationChange);
+      audio.addEventListener("loadedmetadata", handleDurationChange);
+
+      // Set src after adding listeners to ensure we don't miss early cached events
+      audio.src = url;
+
+      const ws = WaveSurfer.create({
+        container: containerRef.current,
+        media: audio,
+        waveColor: "rgba(148, 163, 184, 0.25)",
+        progressColor: "#3b82f6",
+        cursorColor: "#60a5fa",
+        cursorWidth: 2,
+        height: 48,
+        normalize: true,
+        barWidth: 2,
+        barGap: 3,
+        barRadius: 2,
+      });
+
+      wavesurferRef.current = ws;
+
+      ws.on("ready", () => {
+        setDuration(ws.getDuration());
+      });
+
+      ws.on("audioprocess", () => {
+        const time = ws.getCurrentTime();
+        setCurrentTime(time);
+        onTimeUpdate(time);
+      });
+
+      ws.on("timeupdate", () => {
+        const time = ws.getCurrentTime();
+        setCurrentTime(time);
+        onTimeUpdate(time);
+      });
+
+      ws.on("play", () => setIsPlaying(true));
+      ws.on("pause", () => setIsPlaying(false));
+      ws.on("error", (e) => console.warn("WaveSurfer visual error (falling back to audio element):", e));
+
+      // Trigger duration update if audio element loaded metadata before WaveSurfer was ready
       if (audio.duration) {
         setDuration(audio.duration);
       }
     };
-    audio.addEventListener("durationchange", handleDurationChange);
-    audio.addEventListener("loadedmetadata", handleDurationChange);
 
-    ws.on("ready", () => {
-      setDuration(ws.getDuration());
-    });
-
-    ws.on("audioprocess", () => {
-      const time = ws.getCurrentTime();
-      setCurrentTime(time);
-      onTimeUpdate(time);
-    });
-
-    ws.on("timeupdate", () => {
-      const time = ws.getCurrentTime();
-      setCurrentTime(time);
-      onTimeUpdate(time);
-    });
-
-    ws.on("play", () => setIsPlaying(true));
-    ws.on("pause", () => setIsPlaying(false));
-    ws.on("error", (e) => console.warn("WaveSurfer visual error (falling back to audio element):", e));
+    const container = containerRef.current;
+    if (container.clientWidth > 0) {
+      initWaveSurfer();
+    } else {
+      // Wait for layout/animation to paint the container before initializing WaveSurfer
+      observer = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          if (entry.contentRect.width > 0) {
+            initWaveSurfer();
+            observer?.disconnect();
+            observer = null;
+            break;
+          }
+        }
+      });
+      observer.observe(container);
+    }
 
     return () => {
-      audio.pause();
-      audio.src = "";
-      try {
-        audio.load();
-      } catch (err) {}
-      audio.removeEventListener("durationchange", handleDurationChange);
-      audio.removeEventListener("loadedmetadata", handleDurationChange);
-      ws.destroy();
+      isCleanedUp = true;
+      if (observer) {
+        observer.disconnect();
+      }
+      if (wavesurferRef.current) {
+        const ws = wavesurferRef.current;
+        const media = ws.getMediaElement();
+        if (media) {
+          media.pause();
+          media.src = "";
+          try {
+            (media as HTMLAudioElement).load();
+          } catch (e) {}
+        }
+        ws.destroy();
+        wavesurferRef.current = null;
+      }
     };
   }, [url]);
 
