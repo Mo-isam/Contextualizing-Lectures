@@ -1,10 +1,14 @@
 import os
+import sys
 import json
 import uuid
 import time
 import logging
 import asyncio
 from typing import List, Dict, Any, Optional
+
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
