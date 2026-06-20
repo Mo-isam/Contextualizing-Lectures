@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import WaveSurfer from "wavesurfer.js";
 import { Play, Pause, Volume2, VolumeX, Link2, Link2Off } from "lucide-react";
 import type { AlignedNote } from "../types";
@@ -33,7 +33,6 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   const [slideBoundaries, setSlideBoundaries] = useState<Array<{ slide: number; start: number; end: number }>>([]);
   const [hoverTime, setHoverTime] = useState<{ x: number; time: string } | null>(null);
   const [resyncSlide, setResyncSlide] = useState<number | null>(null);
-  const trackRef = useRef<HTMLDivElement>(null);
   const [trackWidthPx, setTrackWidthPx] = useState<number>(0);
   const [hoveredCluster, setHoveredCluster] = useState<Array<{
     slide: number;
@@ -45,45 +44,35 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   }> | null>(null);
   const [clusterAnchorX, setClusterAnchorX] = useState<number>(0);
 
-  // Measure slide duration track width in pixels
-  useEffect(() => {
-    const el = trackRef.current;
-    if (!el) return;
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
-    const updateWidth = () => {
-      const rect = el.getBoundingClientRect();
-      if (rect.width > 0) {
-        setTrackWidthPx(rect.width);
-      }
-    };
-
-    updateWidth();
-
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        if (entry.contentRect && entry.contentRect.width > 0) {
-          setTrackWidthPx(entry.contentRect.width);
+  const trackRef = useCallback((node: HTMLDivElement | null) => {
+    if (node) {
+      const updateWidth = () => {
+        const rect = node.getBoundingClientRect();
+        if (rect.width > 0) {
+          setTrackWidthPx(rect.width);
         }
+      };
+
+      updateWidth();
+
+      if (resizeObserverRef.current) {
+        resizeObserverRef.current.disconnect();
       }
-    });
 
-    observer.observe(el);
+      resizeObserverRef.current = new ResizeObserver(() => {
+        updateWidth();
+      });
 
-    return () => {
-      observer.unobserve(el);
-      observer.disconnect();
-    };
-  }, []);
-
-  // Secondary measure check when boundaries update
-  useEffect(() => {
-    if (trackRef.current) {
-      const rect = trackRef.current.getBoundingClientRect();
-      if (rect.width > 0) {
-        setTrackWidthPx(rect.width);
+      resizeObserverRef.current.observe(node);
+    } else {
+      if (resizeObserverRef.current) {
+        resizeObserverRef.current.disconnect();
+        resizeObserverRef.current = null;
       }
     }
-  }, [slideBoundaries]);
+  }, []);
 
   // Compute slide boundaries from notes
   useEffect(() => {
@@ -446,15 +435,9 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
                 let labelContent = null;
                 if (trackWidthPx > 0) {
-                  if (pixelWidth >= 40) {
+                  if (pixelWidth >= 48) {
                     labelContent = <span className="px-1 text-[9px] truncate font-mono">Slide {seg.slide}</span>;
-                  } else if (pixelWidth >= 20) {
-                    labelContent = <span className="px-1 text-[9px] truncate font-mono">{seg.slide}</span>;
-                  }
-                } else {
-                  if (durationPct >= 3.5) {
-                    labelContent = <span className="px-1 text-[9px] truncate font-mono">Slide {seg.slide}</span>;
-                  } else if (durationPct >= 1.5) {
+                  } else if (pixelWidth >= 24) {
                     labelContent = <span className="px-1 text-[9px] truncate font-mono">{seg.slide}</span>;
                   }
                 }
