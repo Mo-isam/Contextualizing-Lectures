@@ -73,6 +73,8 @@ export const StudioView: React.FC<StudioViewProps> = ({ session, onBack, onSaveC
         slides: session.slides,
         final_output: session.final_output,
         pipeline_type: session.pipeline_type || "audio",
+        peaks: session.peaks,
+        session_id: session.session_id,
       });
       alert("Session saved successfully to your Library!");
       setShowSaveDialog(false);
@@ -146,6 +148,7 @@ export const StudioView: React.FC<StudioViewProps> = ({ session, onBack, onSaveC
           setFollowMode={setFollowMode}
           seekTo={seekTo}
           onTimeUpdate={setCurrentTime}
+          peaks={session.peaks}
         />
       </div>
 

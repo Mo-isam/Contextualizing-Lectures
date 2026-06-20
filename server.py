@@ -82,6 +82,8 @@ class SaveSessionSchema(BaseModel):
     slides: List[SlideSchema]
     final_output: List[AlignedNoteSchema]
     pipeline_type: str = "audio"
+    peaks: Optional[List[float]] = None
+    session_id: Optional[str] = None
 
 class ConfigUpdateSchema(BaseModel):
     is_paid_api: Optional[bool] = None
@@ -140,6 +142,17 @@ def get_session(filename: str):
             slide_images = render_pdf_to_images(session.pdf_path, str(img_dir))
         rel_slide_images = [Path(p).relative_to(TMP_DIR).as_posix() for p in slide_images]
 
+        # On-demand legacy session peak generation upgrade
+        if not session.peaks and session.media_path and Path(session.media_path).exists():
+            try:
+                from core.audio_processor import generate_peaks
+                logger.info(f"Generating missing peaks for legacy session: {session.session_name}")
+                session.peaks = generate_peaks(session.media_path)
+                # Re-save session with peaks to cache it
+                save_session(session)
+            except Exception as e:
+                logger.warning(f"Failed to generate peaks on-demand for legacy session: {e}")
+
         return {
             "session_name": session.session_name,
             "session_description": session.session_description,
@@ -151,7 +164,8 @@ def get_session(filename: str):
             "final_output": to_dict_list(session.final_output),
             "timestamp": session.timestamp,
             "pipeline_type": session.pipeline_type,
-            "slide_images": rel_slide_images
+            "slide_images": rel_slide_images,
+            "peaks": session.peaks
         }
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Session file not found.")
@@ -176,14 +190,15 @@ def post_save_session(payload: SaveSessionSchema):
         session = LectureSession(
             session_name=payload.session_name,
             session_description=payload.session_description,
-            session_id=None,
+            session_id=payload.session_id,  # Reuse existing session_id if provided by the client
             pdf_path=abs_pdf,
             media_path=abs_media,
             transcript_segments=segments,
             slides=slides,
             final_output=notes,
             timestamp=time.time(),
-            pipeline_type=payload.pipeline_type
+            pipeline_type=payload.pipeline_type,
+            peaks=payload.peaks
         )
         
         session_file = save_session(session)

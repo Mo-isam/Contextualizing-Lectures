@@ -28,9 +28,12 @@ def save_session(session_data: LectureSession, temp_dir: str = None) -> str:
     os.makedirs(SESSIONS_DIR, exist_ok=True)
     os.makedirs(FILES_DIR, exist_ok=True)
 
-    slug = "".join([c if c.isalnum() or c in ("-", "_") else "_" for c in session_data.session_name]).strip()
-    # Replace low-resolution timestamp with UUID to guarantee no file collisions
-    session_id = f"{slug}_{uuid.uuid4().hex[:8]}"
+    if session_data.session_id:
+        session_id = session_data.session_id
+    else:
+        slug = "".join([c if c.isalnum() or c in ("-", "_") else "_" for c in session_data.session_name]).strip()
+        # Replace low-resolution timestamp with UUID to guarantee no file collisions
+        session_id = f"{slug}_{uuid.uuid4().hex[:8]}"
 
     def _get_rel_path(full_path):
         if not full_path: return None
@@ -59,6 +62,7 @@ def save_session(session_data: LectureSession, temp_dir: str = None) -> str:
         "final_output"        : _to_dict(session_data.final_output),
         "timestamp"           : time.time(),
         "pipeline_type"       : getattr(session_data, "pipeline_type", "audio"),
+        "peaks"               : session_data.peaks,
     }
 
     session_file = os.path.join(SESSIONS_DIR, f"{session_id}.json")
@@ -124,5 +128,6 @@ def load_session(filename: str) -> LectureSession:
         slides=slides,
         final_output=final_output,
         timestamp=data.get("timestamp", 0.0),
-        pipeline_type=data.get("pipeline_type", "audio")
+        pipeline_type=data.get("pipeline_type", "audio"),
+        peaks=data.get("peaks")
     )

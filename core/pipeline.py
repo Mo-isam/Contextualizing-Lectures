@@ -159,11 +159,21 @@ class PipelineJob:
                 transcript_segments, slides, self.api_key, self.selected_model, self.is_paid_api,
                 progress_cb=lambda frac, msg: self.send_status("alignment", frac, msg)
             )
+        # Generate audio peaks for visualizer waveform rendering
+        self.send_status("alignment", 0.95, "Generating audio visualizer waveform peaks...")
+        try:
+            from core.audio_processor import generate_peaks
+            peaks = generate_peaks(abs_media_path)
+        except Exception as e:
+            logger.warning(f"Failed to generate peaks during pipeline: {e}")
+            peaks = []
+
         self.send_status("alignment", 1.0, "Alignment complete!")
 
         return {
             "transcript_segments": [t.__dict__ for t in transcript_segments],
             "slides": [s.__dict__ for s in slides],
             "final_output": [n.__dict__ for n in final_output],
-            "slide_images": rel_slide_images
+            "slide_images": rel_slide_images,
+            "peaks": peaks
         }

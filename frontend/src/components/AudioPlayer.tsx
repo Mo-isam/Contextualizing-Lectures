@@ -15,6 +15,7 @@ interface AudioPlayerProps {
   setFollowMode: (mode: boolean) => void;
   seekTo: { time: number; timestamp: number } | null;
   onTimeUpdate: (time: number) => void;
+  peaks?: number[];
 }
 
 export const AudioPlayer: React.FC<AudioPlayerProps> = ({
@@ -26,6 +27,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   setFollowMode,
   seekTo,
   onTimeUpdate,
+  peaks,
 }) => {
   const [hoverTime, setHoverTime] = useState<{ x: number; time: string } | null>(null);
   const [resyncSlide, setResyncSlide] = useState<number | null>(null);
@@ -44,7 +46,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     togglePlay,
     toggleMute,
     seekToTime,
-  } = useWaveSurfer({ url, onTimeUpdate });
+  } = useWaveSurfer({ url, peaks, onTimeUpdate });
 
   // Handle slide boundary checking when playhead updates
   useEffect(() => {

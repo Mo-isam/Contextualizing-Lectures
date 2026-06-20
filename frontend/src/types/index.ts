@@ -32,6 +32,7 @@ export interface LectureSession {
   final_output?: AlignedNote[];
   timestamp?: number;
   pipeline_type?: "audio" | "visual";
+  peaks?: number[];
 }
 
 export interface SavedSessionInfo {
@@ -53,5 +54,6 @@ export interface ProgressUpdate {
     slides: Slide[];
     final_output: AlignedNote[];
     slide_images: string[];
+    peaks?: number[];
   };
 }

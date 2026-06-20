@@ -56,6 +56,7 @@ export const App: React.FC = () => {
       final_output: data.final_output,
       slide_images: data.slide_images,
       pipeline_type: pipelineConfig.pipeline_mode,
+      peaks: data.peaks,
     };
     
     setActiveSession(sessionData);

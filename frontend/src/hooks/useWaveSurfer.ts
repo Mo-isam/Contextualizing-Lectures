@@ -3,10 +3,11 @@ import WaveSurfer from "wavesurfer.js";
 
 interface UseWaveSurferProps {
   url: string;
+  peaks?: number[];
   onTimeUpdate: (time: number) => void;
 }
 
-export function useWaveSurfer({ url, onTimeUpdate }: UseWaveSurferProps) {
+export function useWaveSurfer({ url, peaks, onTimeUpdate }: UseWaveSurferProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -47,6 +48,7 @@ export function useWaveSurfer({ url, onTimeUpdate }: UseWaveSurferProps) {
       const ws = WaveSurfer.create({
         container: containerRef.current,
         media: audio,
+        peaks: peaks ? [peaks] : undefined,
         waveColor: "rgba(148, 163, 184, 0.25)",
         progressColor: "#3b82f6",
         cursorColor: "#60a5fa",
@@ -126,7 +128,7 @@ export function useWaveSurfer({ url, onTimeUpdate }: UseWaveSurferProps) {
       setCurrentTime(0);
       setDuration(0);
     };
-  }, [url]);
+  }, [url, peaks]);
 
   const togglePlay = useCallback(() => {
     if (wavesurferRef.current) {
