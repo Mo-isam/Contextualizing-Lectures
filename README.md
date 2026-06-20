@@ -1,47 +1,79 @@
-# 🎓 Contextualizing Lectures · AI
+# 🎓 Contextualizing Lectures · AI (React Studio Edition)
 
 An AI-powered pipeline that bridges static PDF slides with dynamic verbal insights from recorded audio or video lectures. It features a **Dual-Pipeline Architecture**:
 1. **Audio-Only Pipeline:** Uses LLMs to semantically map spoken words to slide content via variable chunking.
 2. **Video-Visual Pipeline:** Uses deterministic Computer Vision (SSIM & ORB/RANSAC) to track on-screen slides, drastically reducing AI hallucination and API costs.
 
+---
+
 ## 🏗️ Architecture
 
-This project follows a strict modular architecture separating the user interface from backend processing. Key features include:
-* **Deterministic Visual Alignment (New):** For video uploads, it uses Gaussian-blurred SSIM for cut detection and RANSAC spatial verification to map video frames to PDF slides geometrically.
-* **Temporal Smoothing & Semantic Filtering (New):** "Slide build-up" animations are flawlessly grouped via 2-Pass Back-fill Smoothing. A Boolean LLM Filter is then used to expertly extract off-topic tangents and interleave them into the UI chronologically as visually distinct "Tangent" cards.
-* **Client-Side Follow Mode Engine (New):** A synchronized "Follow Mode" seamlessly auto-advances lecture slides and note cards during audio/video playback via an independent, client-side JS visibility engine, completely eliminating server-side reruns. Includes auto-sync toggle buttons, cross-slide search, and floating re-sync affordances.
-* **Immersive Studio UI:** A widescreen, native-scrolling desktop experience featuring asymmetric columns (60/40 split) ensuring the slide remains permanently visible ("sticky") while scrolling through long transcripts.
-* **SPA "Wizard" State Machine:** The frontend uses a dynamic router (`app.py`), decoupling all heavy logic into `ui/views.py` to achieve sub-second app startup times.
-* **Smart System Loader:** Dependencies (PyTorch, OpenCV, PyMuPDF) are intelligently lazy-loaded via a pre-flight checklist only when a specific pipeline requires them, saving massive amounts of RAM.
-* **Per-User Proactive API Pacing & Fallback:** The pipeline dynamically reads rate limits from a YAML config, injecting micro-sleeps to avoid limits, and gracefully falls back through a priority list of models.
-* **Invisible Deduplication Registry:** Uploads retain pristine, human-readable filenames and are automatically routed to `documents/` or `media/` folders. An invisible background SHA-256 registry (`file_registry.json`) ensures files are deduplicated instantly without bloating the disk.
+This project is built using a decoupled, highly modular **FastAPI + React SPA** architecture:
+*   **FastAPI REST & WebSocket Server (`server.py`)**: Serves session lists, downloads, saves, config persistence, and handles heavy alignment workloads asynchronously over WebSockets.
+*   **Decoupled Core Processing (`core/`)**: Houses deterministic CV estimators, OCR engines, Whisper loaders, and LLM aligners. The heavy execution pipeline is encapsulated in a thread-safe, cancelable job scheduler (`core/pipeline.py`).
+*   **Vite-Powered React SPA (`frontend/`)**: Renders the desktop studio environment, file uploader wizard, saved session library, and configuration panels.
+*   **Client-Side WaveSurfer Orchestrator**: Incorporates a custom `useWaveSurfer` hook and sub-components (`SlideTimeline` and `SlideJumpPills`) to drive timelines, visual slide boundaries, hover timecards, and slide-snapping features client-side.
+
+### Directory Structure
 
 ```text
-.
-├── app.py                # Ultra-lightweight Streamlit SPA Router
-├── config.yaml           # Auto-generated user configuration
-├── requirements.txt      # Python dependencies
-├── ui/                   # Frontend UI layer
-│   ├── views.py          # Decoupled SPA views (Home, Upload, Processing, Studio)
-│   ├── dialogs.py        # Modals for Settings and Saving
-├── core/                 # Pure backend logic (No Streamlit allowed here)
-│   ├── system_loader.py  # Smart Dependency Pre-warming Engine
-│   ├── config.py         # YAML Configuration Engine
+Contextualizing-Lectures-React/
+├── core/
+│   ├── pipeline.py         # Thread-safe cancelable alignment scheduler
+│   ├── ai_aligner.py       # LLM transcript-to-slide alignment
+│   ├── video_processor.py  # Computer Vision SSIM transition detector & ORB matcher
+│   ├── audio_processor.py  # local Whisper / Gemini AI audio transcribers
+│   ├── pdf_processor.py    # PyMuPDF and AI slide parsing
+│   ├── system_loader.py    # Lazy dependency pre-warming checks
+│   └── storage.py          # Session loading/saving serializer
+├── frontend/
+│   ├── src/
+│   │   ├── services/
+│   │   │   └── api.ts      # Centralized HTTP/WS Api Client
+│   │   ├── hooks/
+│   │   │   └── useWaveSurfer.ts # Custom WaveSurfer player hook
+│   │   ├── components/     # UI Sub-components (Timeline, Pills, Viewer)
+│   │   ├── views/          # Views (Home, Library, Upload, Processing, Studio)
+│   │   └── App.tsx         # Client SPA view router
+│   ├── package.json        # Node configuration
+│   └── vite.config.ts      # Vite dev server with reverse proxy settings
+├── data_storage/           # Local session library database (JSON)
+├── server.py               # FastAPI server entrypoint
+└── requirements.txt        # Python backend dependencies
 ```
+
+---
 
 ## 🚀 Installation & Usage
 
-1. **Install dependencies:**
+### 1. Prerequisites
+Ensure you have **FFmpeg** installed on your system's PATH. This is required for extracting audio from video files and chunking media.
+
+### 2. Backend Setup
+1. Install Python dependencies:
    ```bash
    pip install -r requirements.txt
    ```
-   *(Note: You must have FFmpeg installed on your system PATH for audio extraction).*
-
-2. **Run the application:**
+2. Start the FastAPI server:
    ```bash
-   streamlit run app.py
+   python server.py
    ```
+   *(The server runs on `http://127.0.0.1:8000`)*
 
-3. **Get an API Key:** 
-   You will need a free Google Gemini API key from [Google AI Studio](https://aistudio.google.com/) to run the semantic alignment.
+### 3. Frontend Setup
+1. Open a new terminal and navigate to the frontend directory:
+   ```bash
+   cd frontend
+   ```
+2. Install Node dependencies:
+   ```bash
+   npm install
+   ```
+3. Start the Vite React development server:
+   ```bash
+   npm run dev
+   ```
+   *(Access the app at `http://localhost:5173`. Requests to `/api`, `/data`, and `/tmp` are proxied to the backend automatically).*
 
+### 4. API Credentials
+You will need a Gemini API key from [Google AI Studio](https://aistudio.google.com/) to run the semantic layout alignment pipeline.
