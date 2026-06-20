@@ -31,10 +31,9 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({ config, onComple
   const isVisual = config.pipeline_mode === "visual";
 
   useEffect(() => {
-    // Determine WebSocket URL dynamically via proxy
+    // Connect directly to backend port 8000 to bypass Vite proxy websocket issues
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/api/process/stream`;
+    const wsUrl = `${protocol}//${window.location.hostname}:8000/api/process/stream`;
 
     const ws = new WebSocket(wsUrl);
     socketRef.current = ws;
