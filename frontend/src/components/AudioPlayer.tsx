@@ -488,7 +488,13 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
                   }`}
                   title={`Slide ${seg.slide} (${formatTime(seg.start)} - ${formatTime(seg.end)})`}
                 >
-                  <span className="text-[9px] text-gray-500 font-sans tracking-wide leading-none mr-1">SLIDE</span>
+                  <span className={`text-[9px] font-sans tracking-wide leading-none mr-1 ${
+                    isActive 
+                      ? "text-blue-200" 
+                      : isCurrentPlayheadSlide 
+                        ? "text-purple-400" 
+                        : "text-gray-500"
+                  }`}>SLIDE</span>
                   {seg.slide}
                 </button>
               );
