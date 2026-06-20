@@ -549,10 +549,17 @@ if __name__ == "__main__":
     config = uvicorn.Config(app=app, host="0.0.0.0", port=8000, loop="asyncio")
     server = uvicorn.Server(config)
 
-    if sys.platform == 'win32':
-        # Manually create and set the Selector loop to bypass Uvicorn loop overrides
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(server.serve())
-    else:
-        uvicorn.run(app, host="0.0.0.0", port=8000)
+    try:
+        if sys.platform == 'win32':
+            # Manually create and set the Selector loop to bypass Uvicorn loop overrides
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(server.serve())
+        else:
+            uvicorn.run(app, host="0.0.0.0", port=8000)
+    except KeyboardInterrupt:
+        logger.info("Server stopped by user keyboard interrupt.")
+        try:
+            sys.exit(0)
+        except SystemExit:
+            os._exit(0)
