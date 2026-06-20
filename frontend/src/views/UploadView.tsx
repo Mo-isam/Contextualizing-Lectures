@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { ArrowLeft, Key, FileText, Video, HelpCircle, Settings, Play } from "lucide-react";
+import { ArrowLeft, Key, FileText, Video, HelpCircle, Settings, Play, AlertCircle } from "lucide-react";
 import { SettingsModal } from "../components/SettingsModal";
 
 interface UploadViewProps {
@@ -15,6 +15,11 @@ export const UploadView: React.FC<UploadViewProps> = ({ onBack, onStartProcessin
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
   const [uploading, setUploading] = useState<boolean>(false);
   const [uploadStatus, setUploadStatus] = useState<string>("");
+
+  // Validation and Error states
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [apiKeyError, setApiKeyError] = useState<boolean>(false);
+  const [filesError, setFilesError] = useState<boolean>(false);
 
   // Advanced settings defaults synced with config.yaml
   const [pdfEngine, setPdfEngine] = useState<string>("Native (PyMuPDF) - Fast");
@@ -48,6 +53,8 @@ export const UploadView: React.FC<UploadViewProps> = ({ onBack, onStartProcessin
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setMediaFile(file);
+      setFilesError(false);
+      if (errorMessage?.includes("select both")) setErrorMessage(null);
       if (file.name.toLowerCase().endsWith(".mp4")) {
         setPipelineMode("visual");
       } else {
@@ -59,16 +66,24 @@ export const UploadView: React.FC<UploadViewProps> = ({ onBack, onStartProcessin
   const handlePdfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setPdfFile(e.target.files[0]);
+      setFilesError(false);
+      if (errorMessage?.includes("select both")) setErrorMessage(null);
     }
   };
 
   const executeUpload = async () => {
+    setErrorMessage(null);
+    setApiKeyError(false);
+    setFilesError(false);
+
     if (!apiKey.trim()) {
-      alert("Please enter a Gemini API Key.");
+      setApiKeyError(true);
+      setErrorMessage("Gemini API Key is required to run the alignment pipeline.");
       return;
     }
     if (!pdfFile || !mediaFile) {
-      alert("Please upload both slides and media files.");
+      setFilesError(true);
+      setErrorMessage("Please select both a Lecture Slide deck and an Audio/Video recording.");
       return;
     }
 
@@ -114,7 +129,7 @@ export const UploadView: React.FC<UploadViewProps> = ({ onBack, onStartProcessin
         is_paid_api: isPaidApi,
       });
     } catch (err: any) {
-      alert(`Upload error: ${err.message}`);
+      setErrorMessage(`Upload failed: ${err.message}`);
     } finally {
       setUploading(false);
       setUploadStatus("");
@@ -159,8 +174,18 @@ export const UploadView: React.FC<UploadViewProps> = ({ onBack, onStartProcessin
             type="password"
             placeholder="AIzaSy... (Saved locally in session memory)"
             value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            className="w-full bg-[#0d1117] border border-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 text-gray-200 placeholder-gray-600 rounded-xl px-4 py-3 text-sm outline-none transition-all"
+            onChange={(e) => {
+              setApiKey(e.target.value);
+              if (e.target.value.trim()) {
+                setApiKeyError(false);
+                if (errorMessage?.includes("API Key")) setErrorMessage(null);
+              }
+            }}
+            className={`w-full bg-[#0d1117] border focus:ring-1 focus:ring-blue-500/20 text-gray-200 placeholder-gray-600 rounded-xl px-4 py-3 text-sm outline-none transition-all ${
+              apiKeyError 
+                ? "border-red-500/80 focus:border-red-500 focus:ring-red-500/10" 
+                : "border-gray-800 focus:border-blue-500 focus:ring-blue-500/10"
+            }`}
           />
           <div className="text-[10px] text-gray-500 flex items-center gap-1.5 leading-relaxed pl-1">
             <HelpCircle className="w-3.5 h-3.5 flex-shrink-0" />
@@ -179,7 +204,11 @@ export const UploadView: React.FC<UploadViewProps> = ({ onBack, onStartProcessin
             <div
               onClick={() => pdfInputRef.current?.click()}
               className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all hover:bg-blue-500/5 ${
-                pdfFile ? "border-green-500/40 bg-green-500/5" : "border-gray-800 hover:border-blue-500/30"
+                pdfFile 
+                  ? "border-green-500/40 bg-green-500/5" 
+                  : filesError 
+                  ? "border-red-500/45 bg-red-500/5 animate-pulse" 
+                  : "border-gray-800 hover:border-blue-500/30"
               }`}
             >
               <input
@@ -206,7 +235,11 @@ export const UploadView: React.FC<UploadViewProps> = ({ onBack, onStartProcessin
             <div
               onClick={() => mediaInputRef.current?.click()}
               className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all hover:bg-blue-500/5 ${
-                mediaFile ? "border-green-500/40 bg-green-500/5" : "border-gray-800 hover:border-blue-500/30"
+                mediaFile 
+                  ? "border-green-500/40 bg-green-500/5" 
+                  : filesError 
+                  ? "border-red-500/45 bg-red-500/5 animate-pulse" 
+                  : "border-gray-800 hover:border-blue-500/30"
               }`}
             >
               <input
@@ -251,6 +284,17 @@ export const UploadView: React.FC<UploadViewProps> = ({ onBack, onStartProcessin
                 />
                 <span className="font-semibold text-gray-200">🎙️ Audio-Only Pipeline (Semantic AI)</span>
               </label>
+            </div>
+          </div>
+        )}
+
+        {/* Validation Error Banner */}
+        {errorMessage && (
+          <div className="bg-red-500/10 border border-red-500/25 rounded-xl p-4 flex items-start gap-3 text-red-400 animate-fade-in">
+            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <h5 className="font-bold text-xs">Validation Failed</h5>
+              <p className="text-[11px] leading-relaxed opacity-95">{errorMessage}</p>
             </div>
           </div>
         )}
