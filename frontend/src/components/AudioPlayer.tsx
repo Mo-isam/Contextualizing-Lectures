@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback } from "react";
+import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Play, Pause, Volume2, VolumeX, Link2, Link2Off } from "lucide-react";
 import type { AlignedNote } from "../types";
 import { useWaveSurfer } from "../hooks/useWaveSurfer";
@@ -67,17 +67,22 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     }
   }, [currentTime, duration, followMode, activeSlide, slideBoundaries, onSlideChange]);
 
+  const lastProcessedSeekTo = useRef<{ time: number; timestamp: number } | null>(null);
+
   // Handle external seek requests (e.g. from AlignedNote play-at buttons)
   useEffect(() => {
     if (seekTo && wavesurfer) {
+      if (lastProcessedSeekTo.current === seekTo) return;
+      lastProcessedSeekTo.current = seekTo;
+
       seekToTime(seekTo.time);
-      if (!isPlaying) {
+      if (!wavesurfer.isPlaying()) {
         wavesurfer.play().catch(console.error);
       }
       setFollowMode(true);
       setResyncSlide(null);
     }
-  }, [seekTo, wavesurfer, seekToTime, isPlaying, setFollowMode]);
+  }, [seekTo, wavesurfer, seekToTime, setFollowMode]);
 
   // Unified seeking and segment clicking handler
   const handleSegmentClick = useCallback((time: number, slide: number) => {
