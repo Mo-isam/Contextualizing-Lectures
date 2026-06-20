@@ -76,7 +76,18 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
       end: r.end,
     })).sort((a, b) => a.start - b.start);
 
-    setSlideBoundaries(segments);
+    // Resolve overlaps by capping the end of each segment at the start of the next
+    const cleanSegments = segments.map((seg, idx) => {
+      const nextSeg = segments[idx + 1];
+      const adjustedEnd = nextSeg ? Math.min(seg.end, nextSeg.start) : seg.end;
+      return {
+        slide: seg.slide,
+        start: seg.start,
+        end: Math.max(seg.start + 0.1, adjustedEnd),
+      };
+    });
+
+    setSlideBoundaries(cleanSegments);
   }, [notes]);
 
   // Find slide active at a given timestamp
