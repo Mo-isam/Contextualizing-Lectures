@@ -4,6 +4,12 @@ import subprocess
 import threading
 import signal
 import time
+import socket
+
+def is_port_in_use(port):
+    """Checks if a local TCP port is already in use."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(('127.0.0.1', port)) == 0
 
 def log_stream(stream, prefix, color_code):
     """Reads a stream line by line and prints it with a colored prefix."""
@@ -62,6 +68,24 @@ def main():
     # Safety checks
     if not os.path.exists(frontend_dir):
         print(f"{RED}Error: 'frontend' folder not found at {frontend_dir}.{RESET}")
+        sys.exit(1)
+
+    # Check if ports are already in use
+    backend_port = 8000
+    frontend_port = 5173
+    ports_busy = False
+
+    if is_port_in_use(backend_port):
+        print(f"{RED}Error: Port {backend_port} is already in use.{RESET}")
+        print(f"{YELLOW}A backend server or another process is running on this port. Please close it first.{RESET}\n")
+        ports_busy = True
+
+    if is_port_in_use(frontend_port):
+        print(f"{RED}Error: Port {frontend_port} is already in use.{RESET}")
+        print(f"{YELLOW}A frontend server or another process is running on this port. Please close it first.{RESET}\n")
+        ports_busy = True
+
+    if ports_busy:
         sys.exit(1)
 
     node_modules_dir = os.path.join(frontend_dir, "node_modules")
