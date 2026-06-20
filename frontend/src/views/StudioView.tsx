@@ -4,6 +4,7 @@ import { AudioPlayer } from "../components/AudioPlayer";
 import { SlideViewer } from "../components/SlideViewer";
 import { NoteCard } from "../components/NoteCard";
 import type { AlignedNote, LectureSession } from "../types";
+import { ApiService } from "../services/api";
 
 interface StudioViewProps {
   session: LectureSession & { slide_images: string[] };
@@ -63,22 +64,16 @@ export const StudioView: React.FC<StudioViewProps> = ({ session, onBack, onSaveC
     }
     setSaving(true);
     try {
-      const res = await fetch("/api/session/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_name: saveName,
-          session_description: saveDesc,
-          pdf_path: session.pdf_path,
-          media_path: session.media_path,
-          transcript_segments: session.transcript_segments,
-          slides: session.slides,
-          final_output: session.final_output,
-          pipeline_type: session.pipeline_type || "audio",
-        }),
+      await ApiService.saveSession({
+        session_name: saveName,
+        session_description: saveDesc,
+        pdf_path: session.pdf_path,
+        media_path: session.media_path,
+        transcript_segments: session.transcript_segments,
+        slides: session.slides,
+        final_output: session.final_output,
+        pipeline_type: session.pipeline_type || "audio",
       });
-
-      if (!res.ok) throw new Error("Failed to save session.");
       alert("Session saved successfully to your Library!");
       setShowSaveDialog(false);
       onSaveCompleted();
@@ -143,7 +138,7 @@ export const StudioView: React.FC<StudioViewProps> = ({ session, onBack, onSaveC
           🎵 Lecture Media Timeline
         </div>
         <AudioPlayer
-          url={`http://${window.location.hostname}:8000/data/${session.media_path}`}
+          url={ApiService.getDataUrl(session.media_path || "")}
           notes={notes}
           activeSlide={activeSlide}
           onSlideChange={setActiveSlide}

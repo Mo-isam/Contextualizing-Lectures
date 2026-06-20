@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { ArrowLeft, Key, FileText, Video, HelpCircle, Settings, Play, AlertCircle } from "lucide-react";
 import { SettingsModal } from "../components/SettingsModal";
+import { ApiService } from "../services/api";
 
 interface UploadViewProps {
   onBack: () => void;
@@ -28,11 +29,7 @@ export const UploadView: React.FC<UploadViewProps> = ({ onBack, onStartProcessin
   const [isPaidApi, setIsPaidApi] = useState<boolean>(false);
 
   const fetchConfig = () => {
-    fetch("/api/config")
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to fetch settings.");
-        return res.json();
-      })
+    ApiService.getConfig()
       .then((data) => {
         setIsPaidApi(data.ui_defaults.is_paid_api);
         setSelectedModel(data.ui_defaults.default_model);
@@ -93,29 +90,11 @@ export const UploadView: React.FC<UploadViewProps> = ({ onBack, onStartProcessin
     try {
       // 1. Upload PDF
       setUploadStatus("Uploading slide materials...");
-      const pdfFormData = new FormData();
-      pdfFormData.append("file", pdfFile);
-      pdfFormData.append("file_type", "pdf");
-
-      const pdfRes = await fetch("/api/upload", {
-        method: "POST",
-        body: pdfFormData,
-      });
-      if (!pdfRes.ok) throw new Error("Failed to upload presentation file.");
-      const pdfData = await pdfRes.json();
+      const pdfData = await ApiService.uploadFile(pdfFile, "pdf");
 
       // 2. Upload Media
       setUploadStatus("Uploading lecture recording...");
-      const mediaFormData = new FormData();
-      mediaFormData.append("file", mediaFile);
-      mediaFormData.append("file_type", "media");
-
-      const mediaRes = await fetch("/api/upload", {
-        method: "POST",
-        body: mediaFormData,
-      });
-      if (!mediaRes.ok) throw new Error("Failed to upload recording file.");
-      const mediaData = await mediaRes.json();
+      const mediaData = await ApiService.uploadFile(mediaFile, "media");
 
       // Pass relative paths and configurations forward
       onStartProcessing({

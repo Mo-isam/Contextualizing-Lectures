@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import type { ProgressUpdate } from "../types";
+import { ApiService } from "../services/api";
 
 interface ProcessingViewProps {
   config: any;
@@ -31,10 +32,7 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({ config, onComple
   const isVisual = config.pipeline_mode === "visual";
 
   useEffect(() => {
-    // Connect directly to backend port 8000 to bypass Vite proxy websocket issues
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${window.location.hostname}:8000/api/process/stream`;
-
+    const wsUrl = ApiService.getWebSocketUrl();
     const ws = new WebSocket(wsUrl);
     socketRef.current = ws;
 

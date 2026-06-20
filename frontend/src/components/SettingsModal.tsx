@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Settings, Save, X, Info } from "lucide-react";
+import { ApiService } from "../services/api";
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -29,11 +30,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSave })
   const [ssimThreshold, setSsimThreshold] = useState<number>(0.85);
 
   useEffect(() => {
-    fetch("/api/config")
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to fetch settings.");
-        return res.json();
-      })
+    ApiService.getConfig()
       .then((data) => {
         setIsPaidApi(data.ui_defaults.is_paid_api);
         setDefaultModel(data.ui_defaults.default_model);
@@ -60,26 +57,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSave })
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await fetch("/api/config", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          is_paid_api: isPaidApi,
-          default_model: defaultModel,
-          pdf_engine: pdfEngine,
-          tx_engine: txEngine,
-          whisper_model_size: whisperModelSize,
-          sample_rate: sampleRate,
-          min_chunk_duration_sec: minChunkDuration,
-          max_chunk_duration_sec: maxChunkDuration,
-          render_zoom: renderZoom,
-          matching_strategy: matchingStrategy,
-          frame_sample_rate: frameSampleRate,
-          ssim_threshold: ssimThreshold,
-        }),
+      await ApiService.saveConfig({
+        is_paid_api: isPaidApi,
+        default_model: defaultModel,
+        pdf_engine: pdfEngine,
+        tx_engine: txEngine,
+        whisper_model_size: whisperModelSize,
+        sample_rate: sampleRate,
+        min_chunk_duration_sec: minChunkDuration,
+        max_chunk_duration_sec: maxChunkDuration,
+        render_zoom: renderZoom,
+        matching_strategy: matchingStrategy,
+        frame_sample_rate: frameSampleRate,
+        ssim_threshold: ssimThreshold,
       });
-
-      if (!res.ok) throw new Error("Failed to save settings.");
       onSave();
       onClose();
     } catch (err: any) {

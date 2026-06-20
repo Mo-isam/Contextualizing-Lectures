@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { FolderOpen, Clock, Play, ArrowLeft } from "lucide-react";
 import type { SavedSessionInfo } from "../types";
+import { ApiService } from "../services/api";
 
 interface LibraryViewProps {
   onBack: () => void;
@@ -13,11 +14,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({ onBack, onLoadSession 
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/sessions")
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to fetch sessions");
-        return res.json();
-      })
+    ApiService.getSessions()
       .then((data) => {
         setSessions(data);
         setLoading(false);

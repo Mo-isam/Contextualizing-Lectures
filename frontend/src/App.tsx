@@ -6,6 +6,7 @@ import { ProcessingView } from "./views/ProcessingView";
 import { StudioView } from "./views/StudioView";
 import type { LectureSession } from "./types";
 import { GraduationCap } from "lucide-react";
+import { ApiService } from "./services/api";
 
 type AppStep = "home" | "library" | "upload" | "processing" | "studio";
 
@@ -25,9 +26,7 @@ export const App: React.FC = () => {
   const handleLoadSession = async (filename: string) => {
     setSessionLoading(true);
     try {
-      const res = await fetch(`/api/session/${filename}`);
-      if (!res.ok) throw new Error("Failed to load session from library.");
-      const data = await res.json();
+      const data = await ApiService.getSession(filename);
       setActiveSession(data);
       setStep("studio");
     } catch (err: any) {
