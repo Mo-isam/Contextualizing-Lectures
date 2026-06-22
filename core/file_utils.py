@@ -85,7 +85,7 @@ def save_file(file_bytes: bytes, file_name: str, target_dir: str, use_registry: 
                 
         return resolved_path
 
-    # 3. Clean Filename Generation (Handle naming collisions)
+    # 3. Clean Filename Generation (Handle naming collisions & reuse identical physical files)
     base_name, ext = os.path.splitext(file_name)
     # Allow spaces in names for better UX, but strip weird characters
     clean_base = "".join([c if c.isalnum() or c in ("-", "_", " ") else "_" for c in base_name]).strip()
@@ -93,8 +93,24 @@ def save_file(file_bytes: bytes, file_name: str, target_dir: str, use_registry: 
     final_path = os.path.join(target_dir, f"{clean_base}{ext.lower()}")
     counter = 1
     
-    # If name exists but hash is different (e.g., Biology 'lecture.pdf' vs Physics 'lecture.pdf')
+    # If name exists, check if the physical file content is identical (reuse it if it is)
     while os.path.exists(final_path):
+        try:
+            with open(final_path, "rb") as f:
+                existing_bytes = f.read()
+            existing_hash = hashlib.sha256(existing_bytes).hexdigest()
+        except Exception:
+            existing_hash = None
+            
+        if existing_hash == file_hash:
+            # The physical file on disk has identical content. We can register and reuse it!
+            rel_final_path = os.path.relpath(final_path, data_storage_dir).replace("\\", "/")
+            registry[file_hash] = rel_final_path
+            os.makedirs(data_storage_dir, exist_ok=True)
+            with open(registry_path, "w", encoding="utf-8") as f:
+                json.dump(registry, f, indent=2)
+            return final_path
+            
         final_path = os.path.join(target_dir, f"{clean_base} ({counter}){ext.lower()}")
         counter += 1
 
