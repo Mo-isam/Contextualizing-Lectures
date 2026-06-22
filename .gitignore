@@ -9,3 +9,7 @@ data
 .vscode
 data_storage
 config.yaml
+
+# Ignore all markdown files (notes, walkthroughs, etc.) except READMEs
+*.md
+!README.md
