@@ -224,9 +224,9 @@ def post_save_session(payload: SaveSessionSchema):
         abs_media = str(Path(DATA_STORAGE_DIR) / os.path.normpath(payload.media_path))
 
         # Reconstruct dataclasses
-        segments = [TranscriptSegment(**s.dict()) for s in payload.transcript_segments]
-        slides = [Slide(**s.dict()) for s in payload.slides]
-        notes = [AlignedNote(**n.dict()) for n in payload.final_output]
+        segments = [TranscriptSegment(**s.model_dump()) for s in payload.transcript_segments]
+        slides = [Slide(**s.model_dump()) for s in payload.slides]
+        notes = [AlignedNote(**n.model_dump()) for n in payload.final_output]
 
         session = LectureSession(
             session_name=payload.session_name,

@@ -170,7 +170,8 @@ def _process_structured_response(response_text: str, segment_dict: dict[int, Tra
                 exact_transcript=transcript_text,
                 ai_insight=insight,
                 timestamp_start=t_start,
-                timestamp_end=t_end
+                timestamp_end=t_end,
+                is_off_topic=(s_num == 0)
             ))
             
     return final_notes

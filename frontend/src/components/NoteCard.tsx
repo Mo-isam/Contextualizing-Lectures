@@ -20,11 +20,12 @@ export const NoteCard: React.FC<NoteCardProps> = ({ note, onPlayAt }) => {
   };
 
   const tsLabel = `⏱ ${formatTime(note.timestamp_start)} → ${formatTime(note.timestamp_end)}`;
+  const isOffTopic = note.is_off_topic || note.slide_number === 0;
 
   return (
     <div
       className={`relative rounded-xl p-5 border shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md ${
-        note.is_off_topic
+        isOffTopic
           ? "bg-[#1c212a]/95 border-gray-800 hover:border-gray-700"
           : "bg-gradient-to-br from-[#121c2c]/90 to-[#0e1624]/90 border-[#1f3f6e]/30 hover:border-[#1f3f6e]/60"
       }`}
@@ -32,13 +33,13 @@ export const NoteCard: React.FC<NoteCardProps> = ({ note, onPlayAt }) => {
       {/* Indicator border stripe */}
       <div
         className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-xl ${
-          note.is_off_topic ? "bg-gray-500" : "bg-gradient-to-b from-blue-500 to-purple-500"
+          isOffTopic ? "bg-gray-500" : "bg-gradient-to-b from-blue-500 to-purple-500"
         }`}
       />
 
       <div className="flex items-start justify-between gap-3 mb-2.5">
         {/* Badges */}
-        {note.is_off_topic ? (
+        {isOffTopic ? (
           <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold rounded-full bg-gray-800 border border-gray-700 text-gray-400">
             <MessageSquare className="w-3 h-3" />
             Tangent
@@ -58,7 +59,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({ note, onPlayAt }) => {
       {/* Exact Transcript Quote */}
       <blockquote
         className={`text-xs italic pl-3 border-l-2 mb-3 leading-relaxed ${
-          note.is_off_topic
+          isOffTopic
             ? "border-gray-600 text-gray-400"
             : "border-blue-500/50 text-gray-300"
         }`}
@@ -67,7 +68,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({ note, onPlayAt }) => {
       </blockquote>
 
       {/* AI Insight (if present and not off-topic) */}
-      {!note.is_off_topic && note.ai_insight && (
+      {!isOffTopic && note.ai_insight && (
         <div className="bg-blue-500/5 border border-blue-500/10 rounded-lg p-3 text-[11px] leading-relaxed text-[#c4d6f0] mb-4 flex gap-2">
           <Sparkles className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
           <div>
