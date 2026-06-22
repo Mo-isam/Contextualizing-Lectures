@@ -65,10 +65,12 @@ class AlignedNoteSchema(BaseModel):
     is_off_topic: bool = False
 
 class SlideSchema(BaseModel):
-    slide_number: int
+    page_number: int
+    title: str
     text: str
 
 class TranscriptSegmentSchema(BaseModel):
+    id: int
     start: float
     end: float
     text: str
