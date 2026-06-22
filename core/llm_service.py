@@ -87,7 +87,7 @@ def _apply_proactive_pacing(api_key: str, model_id: str, is_paid: bool, progress
     
     if sleep_time > 0:
         if progress_cb and sleep_time > 1.0:
-            # Yield to Streamlit UI with 1-second ticks
+            # Yield to progress callback (WebSockets) with 1-second ticks
             for sec in range(int(sleep_time), 0, -1):
                 progress_cb(progress_idx, f"⏳ Pacing API to maintain {rpm} RPM ({sec}s)...")
                 time.sleep(1)

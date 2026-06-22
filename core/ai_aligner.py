@@ -195,7 +195,7 @@ def align_transcript_to_slides(
         slides      : Slide Text Array (from pdf_processor.py).
         api_key     : Gemini API key.
         models_to_try: Priority list of model IDs to attempt.
-        progress_cb : Optional callback(float, str) for Streamlit progress bars.
+        progress_cb : Optional callback(float, str) for progress tracking.
 
     Returns:
         FINAL OUTPUT JSON — merged, sorted list of alignment dicts.
