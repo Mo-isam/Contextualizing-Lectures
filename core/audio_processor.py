@@ -14,6 +14,10 @@ import time
 import logging
 import shutil
 import threading
+import warnings
+
+# Suppress expected PyTorch CPU FP16 warnings
+warnings.filterwarnings("ignore", message="FP16 is not supported on CPU")
 
 from core.llm_service import generate_content_with_fallback, SafetyFilterError, AllModelsFailedError, upload_and_wait_for_file, delete_cloud_file
 from core.models import TranscriptSegment
@@ -141,15 +145,26 @@ def transcribe_audio(audio_path: str, progress_cb=None) -> list[TranscriptSegmen
 
         class WhisperTqdm(original_tqdm):
             def __init__(self, *args, **kwargs):
+                # Redirect output to devnull to avoid terminal logging noise
+                kwargs['file'] = open(os.devnull, 'w')
                 super().__init__(*args, **kwargs)
+                self.last_logged_decile = -1
             def update(self, n=1):
                 super().update(n)
-                # Ensure we safely read self.total before doing math
-                if progress_cb and getattr(self, "total", 0) and self.total > 0:
-                    # Map tqdm's 0-100% to our remaining 10% to 100% UI bar
-                    frac = self.n / self.total
-                    scaled_frac = 0.1 + (frac * 0.9)
-                    progress_cb(scaled_frac, f"🎙️ Processing audio frames ({self.n}/{self.total})...")
+                total = getattr(self, "total", 0)
+                if total > 0:
+                    pct = int((self.n / total) * 100)
+                    decile = pct // 10
+                    # Log progress to the terminal console at clean 10% increments
+                    if decile > self.last_logged_decile or pct == 100:
+                        self.last_logged_decile = decile
+                        logger.info(f"Transcribing audio: {pct}% complete ({self.n}/{total} frames)")
+                    
+                    if progress_cb:
+                        # Map tqdm's 0-100% to our remaining 10% to 100% UI bar
+                        frac = self.n / total
+                        scaled_frac = 0.1 + (frac * 0.9)
+                        progress_cb(scaled_frac, f"🎙️ Processing audio frames ({self.n}/{total})...")
 
         tqdm.tqdm = WhisperTqdm
 
