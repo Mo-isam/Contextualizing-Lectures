@@ -87,7 +87,7 @@ def _apply_proactive_pacing(api_key: str, model_id: str, is_paid: bool, progress
     
     if sleep_time > 0:
         if progress_cb and sleep_time > 1.0:
-            # Yield to Streamlit UI with 1-second ticks
+            # Yield to progress callback (WebSockets) with 1-second ticks
             for sec in range(int(sleep_time), 0, -1):
                 progress_cb(progress_idx, f"⏳ Pacing API to maintain {rpm} RPM ({sec}s)...")
                 time.sleep(1)
@@ -256,6 +256,12 @@ def generate_content_with_fallback(
                         time.sleep(1)
                 else:
                     time.sleep(wait)
+        else:
+            # Executed if the attempt loop completed fully without hitting 'break'
+            msg = f"⚠️ Model {model_id} failed after {max_retries} attempts on {log_context}. Swapping to next available model..."
+            logger.warning(msg)
+            if progress_cb:
+                progress_cb(progress_idx, msg)
 
     # If we exit the loops, it means all models failed
     error_msg = f"❌ All models failed for {log_context}."

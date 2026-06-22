@@ -1,0 +1,36 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Inter', sans-serif;
+    background: linear-gradient(160deg, #0d1117 0%, #0f1922 50%, #0d1117 100%);
+    color: #c9d1d9;
+    min-height: 100vh;
+    margin: 0;
+  }
+}
+
+/* Custom scrollbar matching original app styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(100, 160, 255, 0.2);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 160, 255, 0.35);
+}
+
+/* WaveSurfer timeline styles */
+.wavesurfer-marker {
+  transition: transform 0.1s ease-in-out;
+}
+.wavesurfer-marker:hover {
+  transform: scale(1.2);
+}
