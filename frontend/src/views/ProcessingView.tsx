@@ -17,6 +17,10 @@ interface StageProgress {
   done: boolean;
 }
 
+// Module-level connection variables (survive unmount-remount in Strict Mode)
+let activeSocket: WebSocket | null = null;
+let closeTimeoutId: any = null;
+
 export const ProcessingView: React.FC<ProcessingViewProps> = ({ config, onComplete, onCancel }) => {
   const [error, setError] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
@@ -32,16 +36,15 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({ config, onComple
   const isVisual = config.pipeline_mode === "visual";
 
   useEffect(() => {
-    const wsUrl = ApiService.getWebSocketUrl();
-    const ws = new WebSocket(wsUrl);
-    socketRef.current = ws;
+    // Clear any pending socket closure from a recent unmount
+    if (closeTimeoutId) {
+      clearTimeout(closeTimeoutId);
+      closeTimeoutId = null;
+    }
 
-    ws.onopen = () => {
-      // Send the configuration to the server
-      ws.send(JSON.stringify(config));
-    };
+    let ws = activeSocket;
 
-    ws.onmessage = (event) => {
+    const handleMessage = (event: MessageEvent) => {
       const data: ProgressUpdate = JSON.parse(event.data);
 
       if (data.status === "processing" && data.stage) {
@@ -70,31 +73,72 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({ config, onComple
         });
       } else if (data.status === "complete" && data.data) {
         onComplete(data.data);
-        ws.close();
+        if (activeSocket) {
+          activeSocket.close();
+          activeSocket = null;
+        }
       } else if (data.status === "error") {
         setError(data.message || "An unexpected error occurred during execution.");
-        ws.close();
+        if (activeSocket) {
+          activeSocket.close();
+          activeSocket = null;
+        }
       }
     };
 
-    ws.onerror = () => {
+    const handleError = () => {
       setError("WebSocket connection error. Could not establish link to alignment server.");
     };
 
-    ws.onclose = () => {
+    const handleClose = () => {
       console.log("WebSocket connection closed.");
     };
 
+    if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+      const wsUrl = ApiService.getWebSocketUrl();
+      ws = new WebSocket(wsUrl);
+      activeSocket = ws;
+
+      ws.onopen = () => {
+        // Send the configuration to the server
+        ws.send(JSON.stringify(config));
+      };
+
+      ws.onmessage = handleMessage;
+      ws.onerror = handleError;
+      ws.onclose = handleClose;
+    } else {
+      // Re-bind fresh handlers to point to the current closures
+      ws.onmessage = handleMessage;
+      ws.onerror = handleError;
+      ws.onclose = handleClose;
+    }
+
+    socketRef.current = ws;
+
     return () => {
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-        ws.close();
-      }
+      // Delay closing to see if a remount (Strict Mode) happens immediately
+      closeTimeoutId = setTimeout(() => {
+        if (activeSocket) {
+          activeSocket.close();
+          activeSocket = null;
+        }
+        closeTimeoutId = null;
+      }, 100);
     };
   }, [config, onComplete]);
 
   const handleCancel = () => {
     if (socketRef.current) {
       socketRef.current.close();
+    }
+    if (activeSocket) {
+      activeSocket.close();
+      activeSocket = null;
+    }
+    if (closeTimeoutId) {
+      clearTimeout(closeTimeoutId);
+      closeTimeoutId = null;
     }
     onCancel();
   };
