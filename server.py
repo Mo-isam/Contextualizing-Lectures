@@ -23,7 +23,42 @@ from core.models import TranscriptSegment, Slide, AlignedNote, LectureSession
 from core.config import app_config
 from core.pipeline import PipelineJob, PipelineCancelledError
 
-logging.basicConfig(level=logging.INFO)
+# Custom logging filter and formatter to categorize processes
+class ProcessLabelFilter(logging.Filter):
+    def filter(self, record):
+        name = record.name
+        if "audio_processor" in name:
+            record.process_label = "Audio"
+        elif "video_processor" in name:
+            record.process_label = "Video"
+        elif "ai_aligner" in name:
+            record.process_label = "Alignment"
+        elif "llm_service" in name:
+            record.process_label = "LLM"
+        elif "pipeline" in name:
+            record.process_label = "Pipeline"
+        elif "server" in name or name == "__main__":
+            record.process_label = "Server"
+        elif "uvicorn" in name:
+            record.process_label = "Server"
+        else:
+            # Fallback to general submodule name
+            record.process_label = name.split(".")[-1].capitalize()
+        return True
+
+# Initialize stdout handler
+stdout_handler = logging.StreamHandler(sys.stdout)
+stdout_handler.addFilter(ProcessLabelFilter())
+stdout_handler.setFormatter(logging.Formatter("[%(process_label)s] %(levelname)s: %(message)s"))
+
+# Configure root logger
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+# Clear existing handlers if any
+for h in list(root_logger.handlers):
+    root_logger.removeHandler(h)
+root_logger.addHandler(stdout_handler)
+
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Contextualizing Lectures · API Server")
@@ -509,7 +544,35 @@ if __name__ == "__main__":
     if sys.platform == 'win32':
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-    config = uvicorn.Config(app=app, host="0.0.0.0", port=8000, loop="asyncio")
+    # Modify uvicorn logging config to route to stdout and use custom formatting
+    log_config = uvicorn.config.LOGGING_CONFIG
+    if "handlers" in log_config:
+        if "default" in log_config["handlers"]:
+            log_config["handlers"]["default"]["stream"] = "ext://sys.stdout"
+            
+        # Define formatter and filter for uvicorn
+        log_config["filters"] = log_config.get("filters", {})
+        log_config["filters"]["process_label"] = {
+            "()": lambda: ProcessLabelFilter()
+        }
+        
+        log_config["formatters"] = log_config.get("formatters", {})
+        log_config["formatters"]["custom_uvicorn"] = {
+            "()": "logging.Formatter",
+            "fmt": "[%(process_label)s] %(levelname)s: %(message)s",
+            "use_colors": False
+        }
+        
+        # Apply filter and custom formatter to handlers
+        if "default" in log_config["handlers"]:
+            log_config["handlers"]["default"]["filters"] = log_config["handlers"]["default"].get("filters", []) + ["process_label"]
+            log_config["handlers"]["default"]["formatter"] = "custom_uvicorn"
+            
+        if "access" in log_config["handlers"]:
+            log_config["handlers"]["access"]["filters"] = log_config["handlers"]["access"].get("filters", []) + ["process_label"]
+            log_config["handlers"]["access"]["formatter"] = "custom_uvicorn"
+
+    config = uvicorn.Config(app=app, host="0.0.0.0", port=8000, loop="asyncio", log_config=log_config)
     server = uvicorn.Server(config)
 
     try:
