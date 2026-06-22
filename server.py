@@ -559,8 +559,7 @@ if __name__ == "__main__":
         log_config["formatters"] = log_config.get("formatters", {})
         log_config["formatters"]["custom_uvicorn"] = {
             "()": "logging.Formatter",
-            "fmt": "[%(process_label)s] %(levelname)s: %(message)s",
-            "use_colors": False
+            "fmt": "[%(process_label)s] %(levelname)s: %(message)s"
         }
         
         # Apply filter and custom formatter to handlers
