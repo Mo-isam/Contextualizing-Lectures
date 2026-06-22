@@ -131,7 +131,7 @@ def _get_orb_matches(kp1, des1, kp2, des2):
     return int(np.sum(mask))
 
 
-def match_keyframes_to_slides(keyframes: list[dict], slide_images: list[str], slides_text: str, api_key: str = "", progress_cb=None) -> list[dict]:
+def match_keyframes_to_slides(keyframes: list[dict], slide_images: list[str], slides_text: str, api_key: str = "", models_to_try: list[str] = None, progress_cb=None) -> list[dict]:
     """
     Pass 1: CV RANSAC ORB Matching
     Pass 2: Temporal Smoothing (Back-Fill) & AI Anomaly Rescue
@@ -221,9 +221,10 @@ def match_keyframes_to_slides(keyframes: list[dict], slide_images: list[str], sl
                     )
                     try:
                         img_obj = Image.open(kf_path)
+                        fallback_models = models_to_try if models_to_try else ["gemini-2.5-flash", "gemini-3.5-flash"]
                         response_text = generate_content_with_fallback(
                             contents=[prompt, img_obj],
-                            models_to_try=["gemini-2.5-flash", "gemini-3.5-flash"],
+                            models_to_try=fallback_models,
                             api_key=api_key,
                             schema=schema,
                             max_retries=2

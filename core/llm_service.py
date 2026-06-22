@@ -256,6 +256,12 @@ def generate_content_with_fallback(
                         time.sleep(1)
                 else:
                     time.sleep(wait)
+        else:
+            # Executed if the attempt loop completed fully without hitting 'break'
+            msg = f"⚠️ Model {model_id} failed after {max_retries} attempts on {log_context}. Swapping to next available model..."
+            logger.warning(msg)
+            if progress_cb:
+                progress_cb(progress_idx, msg)
 
     # If we exit the loops, it means all models failed
     error_msg = f"❌ All models failed for {log_context}."

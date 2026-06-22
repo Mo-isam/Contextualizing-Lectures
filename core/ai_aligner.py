@@ -179,12 +179,12 @@ def _process_structured_response(response_text: str, segment_dict: dict[int, Tra
 # ── Main Alignment Function ────────────────────────────────────────────────────
 
 def align_transcript_to_slides(
-    segments    : list[TranscriptSegment],
-    slides      : list[Slide],
-    api_key     : str,
-    model_name  : str  = "",          # overrides GEMINI_MODEL_PRIORITY[0] if set
-    is_paid     : bool = False,
-    progress_cb         = None,
+    segments      : list[TranscriptSegment],
+    slides        : list[Slide],
+    api_key       : str,
+    models_to_try : list[str] = None,
+    is_paid       : bool = False,
+    progress_cb           = None,
 ) -> list[dict]:
     """
     Orchestrate the full chunking → Gemini → merging pipeline.
@@ -193,7 +193,7 @@ def align_transcript_to_slides(
         segments    : Whisper transcript segments (from audio_processor.py).
         slides      : Slide Text Array (from pdf_processor.py).
         api_key     : Gemini API key.
-        model_name  : Specific model to use. Falls back to priority list.
+        models_to_try: Priority list of model IDs to attempt.
         progress_cb : Optional callback(float, str) for Streamlit progress bars.
 
     Returns:
@@ -202,22 +202,9 @@ def align_transcript_to_slides(
     if not api_key or api_key.strip() == "":
         raise ValueError("Gemini API key is missing. Please enter your key in the sidebar.")
 
-    # Build model priority list: user pick first, then discovered models, then defaults
-    models_to_try = [model_name.strip()] if model_name.strip() else []
-    
-    discovered = []
-    try:
-        discovered = discover_available_models(api_key)
-    except Exception:
-        pass
-
-    for m in discovered:
-        if m not in models_to_try:
-            models_to_try.append(m)
-
-    for m in GEMINI_MODEL_PRIORITY:
-        if m not in models_to_try:
-            models_to_try.append(m)
+    # Use the passed fallback list, or defaults if not provided
+    if not models_to_try:
+        models_to_try = GEMINI_MODEL_PRIORITY
 
     # ── Prepare context and mapping dictionaries ──────────────────────────────
     from core.pdf_processor import format_slides_for_prompt

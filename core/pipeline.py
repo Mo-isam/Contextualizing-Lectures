@@ -80,17 +80,8 @@ class PipelineJob:
         )
         self.send_status("preflight", 1.0, "Ready!")
 
-        # Model prioritization mapping
-        discovered_models = []
-        if self.is_paid_api and self.api_key:
-            try:
-                discovered_models = discover_available_models(self.api_key)
-            except Exception:
-                pass
+        # Model prioritization mapping (Curated from config.yaml model priority list)
         models_to_try = [self.selected_model] if self.selected_model else []
-        for m in discovered_models:
-            if m not in models_to_try:
-                models_to_try.append(m)
         for m in GEMINI_MODEL_PRIORITY:
             if m not in models_to_try:
                 models_to_try.append(m)
@@ -129,6 +120,7 @@ class PipelineJob:
             slides_text = format_slides_for_prompt(slides)
             visual_chapters = match_keyframes_to_slides(
                 chapters, slide_images, slides_text, api_key=self.api_key,
+                models_to_try=models_to_try,
                 progress_cb=lambda frac, msg: self.send_status("video", 0.5 + frac * 0.5, msg)
             )
             self.send_status("video", 1.0, "Video keyframe transition mapping complete.")
@@ -156,7 +148,7 @@ class PipelineJob:
             )
         else:
             final_output = align_transcript_to_slides(
-                transcript_segments, slides, self.api_key, self.selected_model, self.is_paid_api,
+                transcript_segments, slides, self.api_key, models_to_try, self.is_paid_api,
                 progress_cb=lambda frac, msg: self.send_status("alignment", frac, msg)
             )
         # Generate audio peaks for visualizer waveform rendering
