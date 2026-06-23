@@ -49,6 +49,12 @@ export interface ProgressUpdate {
   stage?: "preflight" | "pdf" | "video" | "audio" | "alignment";
   progress?: number;
   message?: string;
+  models_list?: string[];
+  active_model?: string | null;
+  model_status?: "active" | "warning" | "error" | null;
+  model_message?: string | null;
+  dead_models?: string[];
+  model_call_stats?: Record<string, { success: number; failure: number }> | null;
   data?: {
     transcript_segments: TranscriptSegment[];
     slides: Slide[];

@@ -473,16 +473,35 @@ async def websocket_process_stream(websocket: WebSocket):
         loop = asyncio.get_running_loop()
 
         # Thread-safe async callback builder
-        def send_status(stage: str, progress: float, msg: str):
+        def send_status(
+            stage: str, 
+            progress: float, 
+            msg: str, 
+            models_list=None, 
+            active_model=None, 
+            model_status=None, 
+            model_message=None, 
+            dead_models=None,
+            model_call_stats=None
+        ):
             if cancellation_event.is_set():
                 raise PipelineCancelledError("Pipeline run aborted because the client disconnected.")
+            
+            payload = {
+                "status": "processing",
+                "stage": stage,
+                "progress": progress,
+                "message": msg,
+                "models_list": models_list,
+                "active_model": active_model,
+                "model_status": model_status,
+                "model_message": model_message,
+                "dead_models": dead_models,
+                "model_call_stats": model_call_stats
+            }
+
             asyncio.run_coroutine_threadsafe(
-                websocket.send_json({
-                    "status": "processing",
-                    "stage": stage,
-                    "progress": progress,
-                    "message": msg
-                }),
+                websocket.send_json(payload),
                 loop
             )
 

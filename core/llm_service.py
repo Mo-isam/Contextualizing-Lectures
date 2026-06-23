@@ -64,6 +64,8 @@ class AllModelsFailedError(Exception):
 _last_call_times = {}
 # Set to permanently blacklist models that hit daily quota limits during a run
 _dead_models = set()
+# Dictionary to track cumulative API call success and failure counts per model ID
+_model_call_stats = {}
 
 # Free tier limits (2026 guidelines) populated from config
 MODEL_RPM_LIMITS = app_config.get("llm", "rpm_limits", {"default": 15})
@@ -73,7 +75,7 @@ def _apply_proactive_pacing(api_key: str, model_id: str, is_paid: bool, progress
     if is_paid:
         return
         
-    global _last_call_times
+    global _last_call_times, _dead_models, _model_call_stats
     key_hash = hash(api_key)
     
     rpm = MODEL_RPM_LIMITS.get(model_id, MODEL_RPM_LIMITS["default"])
@@ -89,7 +91,15 @@ def _apply_proactive_pacing(api_key: str, model_id: str, is_paid: bool, progress
         if progress_cb and sleep_time > 1.0:
             # Yield to progress callback (WebSockets) with 1-second ticks
             for sec in range(int(sleep_time), 0, -1):
-                progress_cb(progress_idx, f"⏳ Pacing API to maintain {rpm} RPM ({sec}s)...")
+                progress_cb(
+                    progress_idx, 
+                    f"⏳ Pacing API to maintain {rpm} RPM ({sec}s)...",
+                    active_model=model_id,
+                    model_status="active",
+                    model_message=f"Pacing API to maintain {rpm} RPM ({sec}s remaining)",
+                    dead_models=list(_dead_models),
+                    model_call_stats=dict(_model_call_stats)
+                )
                 time.sleep(1)
             time.sleep(sleep_time - int(sleep_time)) # Sleep remainder
         else:
@@ -194,13 +204,28 @@ def generate_content_with_fallback(
             response_schema=schema
         )
 
-    global _dead_models
+    global _dead_models, _model_call_stats
+    
+    # Initialize stats for any unseen model in the priority list
+    for m in models_to_try:
+        _model_call_stats.setdefault(m, {"success": 0, "failure": 0})
     
     for model_id in models_to_try:
         if model_id in _dead_models:
             continue  # Skip this model for the rest of the session; it's dead.
             
         for attempt in range(1, max_retries + 1):
+            if progress_cb:
+                progress_cb(
+                    progress_idx,
+                    f"🤖 Querying {model_id} (Attempt {attempt})...",
+                    active_model=model_id,
+                    model_status="active",
+                    model_message=f"Querying {model_id} (Attempt {attempt} of {max_retries})",
+                    dead_models=list(_dead_models),
+                    model_call_stats=dict(_model_call_stats)
+                )
+            
             _apply_proactive_pacing(api_key, model_id, is_paid, progress_cb, progress_idx)
             
             try:
@@ -218,41 +243,90 @@ def generate_content_with_fallback(
                 # Defensively strip Markdown code blocks that Gemini sometimes wraps JSON in
                 clean_text = re.sub(r"^```(?:json)?\n?", "", raw_text, flags=re.IGNORECASE)
                 clean_text = re.sub(r"\n?```$", "", clean_text)
+                
+                # Increment success count
+                _model_call_stats[model_id]["success"] += 1
+                
+                # Report successful completion and reset status to idle
+                if progress_cb:
+                    progress_cb(
+                        progress_idx,
+                        f"✓ Response received from {model_id}",
+                        active_model=model_id,
+                        model_status=None,
+                        model_message=None,
+                        dead_models=list(_dead_models),
+                        model_call_stats=dict(_model_call_stats)
+                    )
                 return clean_text.strip()
 
             except Exception as exc:
+                # Increment failure count
+                _model_call_stats[model_id]["failure"] += 1
                 exc_str = str(exc)
                 
                 # 1. Blocked by Copyright / Safety
                 if "finish_reason" in exc_str or "valid Part" in exc_str or "safety" in exc_str.lower():
                     msg = f"⚠️ {log_context} blocked by AI Safety filter."
                     logger.warning(msg)
-                    if progress_cb: progress_cb(progress_idx, msg)
+                    if progress_cb:
+                        progress_cb(
+                            progress_idx,
+                            msg,
+                            active_model=model_id,
+                            model_status="warning",
+                            model_message="Blocked by AI Safety filter",
+                            dead_models=list(_dead_models),
+                            model_call_stats=dict(_model_call_stats)
+                        )
                     raise SafetyFilterError(msg)
                     
                 # 2. Hard Quota Exhausted or Model Not Found
                 if is_quota_exhausted(exc_str) or "404" in exc_str:
                     msg = f"⚠️ Model {model_id} exhausted/unavailable on {log_context}. Swapping models..."
                     logger.warning(msg)
-                    if progress_cb: progress_cb(progress_idx, msg)
                     _dead_models.add(model_id)  # Blacklist it permanently for this run
+                    if progress_cb:
+                        progress_cb(
+                            progress_idx,
+                            msg,
+                            active_model=model_id,
+                            model_status="error",
+                            model_message="Hard quota limit hit. Swapping...",
+                            dead_models=list(_dead_models),
+                            model_call_stats=dict(_model_call_stats)
+                        )
                     break  # Break attempt loop, move to next model in models_to_try
                     
                 # 3. Rate Limit (429), Overload (503), or Transient Error
                 if "429" in exc_str:
                     wait = min(extract_retry_delay(exc_str), max_wait_sec)
                     msg = f"⏳ [{model_id}] rate limited on {log_context}. Waiting {wait}s..."
+                    model_status = "warning"
+                    model_message_base = f"Rate limited (429). Retrying in {wait}s"
                 elif "503" in exc_str:
                     wait = min(15 + (attempt * 5), max_wait_sec)
                     msg = f"⚠️ [{model_id}] overloaded (503) on {log_context}. Retrying attempt {attempt} in {wait}s..."
+                    model_status = "warning"
+                    model_message_base = f"Server overloaded (503). Retrying in {wait}s"
                 else:
                     wait = min(15 + (attempt * 5), max_wait_sec)
                     msg = f"⚠️ [{model_id}] attempt {attempt} failed on {log_context}: {exc_str[:40]}... Retrying in {wait}s..."
+                    model_status = "warning"
+                    model_message_base = f"Request failed. Retrying in {wait}s"
                 
                 logger.warning(msg)
                 if progress_cb:
                     for sec in range(wait, 0, -1):
-                        progress_cb(progress_idx, f"{msg} ({sec}s...)")
+                        progress_cb(
+                            progress_idx,
+                            f"{msg} ({sec}s...)",
+                            active_model=model_id,
+                            model_status=model_status,
+                            model_message=f"{model_message_base} ({sec}s remaining)",
+                            dead_models=list(_dead_models),
+                            model_call_stats=dict(_model_call_stats)
+                        )
                         time.sleep(1)
                 else:
                     time.sleep(wait)
@@ -260,11 +334,29 @@ def generate_content_with_fallback(
             # Executed if the attempt loop completed fully without hitting 'break'
             msg = f"⚠️ Model {model_id} failed after {max_retries} attempts on {log_context}. Swapping to next available model..."
             logger.warning(msg)
+            _dead_models.add(model_id)
             if progress_cb:
-                progress_cb(progress_idx, msg)
-
+                progress_cb(
+                    progress_idx,
+                    msg,
+                    active_model=model_id,
+                    model_status="error",
+                    model_message="Model failed all retries. Swapping...",
+                    dead_models=list(_dead_models),
+                    model_call_stats=dict(_model_call_stats)
+                )
+ 
     # If we exit the loops, it means all models failed
     error_msg = f"❌ All models failed for {log_context}."
     logger.error(error_msg)
-    if progress_cb: progress_cb(progress_idx, error_msg)
+    if progress_cb:
+        progress_cb(
+            progress_idx,
+            error_msg,
+            active_model=None,
+            model_status="error",
+            model_message="All models exhausted.",
+            dead_models=list(_dead_models),
+            model_call_stats=dict(_model_call_stats)
+        )
     raise AllModelsFailedError(error_msg)

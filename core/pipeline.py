@@ -26,7 +26,7 @@ class PipelineJob:
         selected_model: str,
         api_key: str,
         is_paid_api: bool,
-        status_callback: Callable[[str, float, str], None],
+        status_callback: Callable,
         cancellation_event: threading.Event
     ):
         self.pdf_path = pdf_path
@@ -39,13 +39,44 @@ class PipelineJob:
         self.is_paid_api = is_paid_api
         self.status_callback = status_callback
         self.cancellation_event = cancellation_event
+        
+        # Model status tracking attributes
+        self.models_to_try = []
+        self.active_model = None
+        self.model_status = None
+        self.model_message = None
+        self.dead_models = []
+        self.model_call_stats = {}
 
-    def send_status(self, stage: str, progress: float, msg: str):
+    def send_status(self, stage: str, progress: float, msg: str, **kwargs):
         if self.cancellation_event.is_set():
             raise PipelineCancelledError("Pipeline run aborted because the client disconnected.")
+            
+        # Dynamically update any passed model metadata fields
+        if "active_model" in kwargs:
+            self.active_model = kwargs["active_model"]
+        if "model_status" in kwargs:
+            self.model_status = kwargs["model_status"]
+        if "model_message" in kwargs:
+            self.model_message = kwargs["model_message"]
+        if "dead_models" in kwargs:
+            self.dead_models = kwargs["dead_models"]
+        if "model_call_stats" in kwargs:
+            self.model_call_stats = kwargs["model_call_stats"]
+            
         if self.status_callback:
             try:
-                self.status_callback(stage, progress, msg)
+                self.status_callback(
+                    stage, 
+                    progress, 
+                    msg,
+                    models_list=self.models_to_try,
+                    active_model=self.active_model,
+                    model_status=self.model_status,
+                    model_message=self.model_message,
+                    dead_models=self.dead_models,
+                    model_call_stats=self.model_call_stats
+                )
             except Exception as e:
                 logger.warning(f"Error in status callback: {e}")
 
@@ -85,6 +116,7 @@ class PipelineJob:
         for m in GEMINI_MODEL_PRIORITY:
             if m not in models_to_try:
                 models_to_try.append(m)
+        self.models_to_try = models_to_try
 
         # STAGE 1: PDF Processing
         self.send_status("pdf", 0.05, "Rendering slide PDF to images...")
@@ -101,7 +133,7 @@ class PipelineJob:
             slides = extract_slide_text_ai(
                 slide_images, self.api_key, models_to_try, 
                 is_paid=self.is_paid_api, 
-                progress_cb=lambda frac, msg: self.send_status("pdf", 0.3 + frac * 0.7, msg)
+                progress_cb=lambda frac, msg, **kwargs: self.send_status("pdf", 0.3 + frac * 0.7, msg, **kwargs)
             )
         self.send_status("pdf", 1.0, f"Extracted text from {len(slides)} slides.")
 
@@ -121,7 +153,7 @@ class PipelineJob:
             visual_chapters = match_keyframes_to_slides(
                 chapters, slide_images, slides_text, api_key=self.api_key,
                 models_to_try=models_to_try,
-                progress_cb=lambda frac, msg: self.send_status("video", 0.5 + frac * 0.5, msg)
+                progress_cb=lambda frac, msg, **kwargs: self.send_status("video", 0.5 + frac * 0.5, msg, **kwargs)
             )
             self.send_status("video", 1.0, "Video keyframe transition mapping complete.")
 
@@ -133,7 +165,7 @@ class PipelineJob:
             abs_media_path, session_temp_dir, 
             engine=engine_mode, api_key=self.api_key, 
             models_to_try=models_to_try, is_paid=self.is_paid_api,
-            progress_cb=lambda frac, msg: self.send_status("audio", frac, msg)
+            progress_cb=lambda frac, msg, **kwargs: self.send_status("audio", frac, msg, **kwargs)
         )
         self.send_status("audio", 1.0, "Transcribing complete.")
 
@@ -144,12 +176,12 @@ class PipelineJob:
             final_output = align_video_to_slides(
                 transcript_segments, visual_chapters, slides, 
                 self.api_key, models_to_try, self.is_paid_api,
-                progress_cb=lambda frac, msg: self.send_status("alignment", frac, msg)
+                progress_cb=lambda frac, msg, **kwargs: self.send_status("alignment", frac, msg, **kwargs)
             )
         else:
             final_output = align_transcript_to_slides(
                 transcript_segments, slides, self.api_key, models_to_try, self.is_paid_api,
-                progress_cb=lambda frac, msg: self.send_status("alignment", frac, msg)
+                progress_cb=lambda frac, msg, **kwargs: self.send_status("alignment", frac, msg, **kwargs)
             )
         # Generate audio peaks for visualizer waveform rendering
         self.send_status("alignment", 0.95, "Generating audio visualizer waveform peaks...")
