@@ -123,5 +123,15 @@ class AppConfig:
         except Exception as e:
             logger.error(f"Failed to save config.yaml: {e}")
 
+    def reset_defaults(self):
+        """Restore config.yaml to default settings."""
+        try:
+            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+                f.write(DEFAULT_YAML)
+            self.config = self._load_config()
+            logger.info("Successfully reset configuration to factory defaults.")
+        except Exception as e:
+            logger.error(f"Failed to reset config.yaml: {e}")
+
 # Singleton instance to be imported across the app
 app_config = AppConfig()

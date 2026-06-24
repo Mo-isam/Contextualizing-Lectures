@@ -139,6 +139,7 @@ class ConfigUpdateSchema(BaseModel):
     matching_strategy: Optional[str] = None
     frame_sample_rate: Optional[int] = None
     ssim_threshold: Optional[float] = None
+    model_priority: Optional[List[str]] = None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -331,6 +332,8 @@ def get_config():
                 "ssim_threshold": app_config.get("video", "ssim_threshold", 0.85),
             },
             "model_options": model_options,
+            "model_priority": app_config.get("llm", "model_priority", []),
+            "rpm_limits": app_config.get("llm", "rpm_limits", {}),
         }
     except Exception as e:
         logger.error(f"Error fetching configuration: {e}")
@@ -370,10 +373,24 @@ def post_config(payload: ConfigUpdateSchema):
         if payload.ssim_threshold is not None:
             app_config.set("video", "ssim_threshold", payload.ssim_threshold)
 
+        if payload.model_priority is not None:
+            app_config.set("llm", "model_priority", payload.model_priority)
+
         app_config.save()
         return {"status": "success", "message": "Configuration saved successfully."}
     except Exception as e:
         logger.error(f"Error saving configuration: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/config/reset")
+def reset_config():
+    """Reset configuration back to factory defaults."""
+    try:
+        app_config.reset_defaults()
+        return {"status": "success", "message": "Configuration reset to factory defaults successfully."}
+    except Exception as e:
+        logger.error(f"Error resetting configuration: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

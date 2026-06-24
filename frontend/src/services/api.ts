@@ -25,6 +25,8 @@ export interface ApiConfig {
     ssim_threshold: number;
   };
   model_options: Record<string, string>;
+  model_priority: string[];
+  rpm_limits?: Record<string, number>;
 }
 
 export const ApiService = {
@@ -145,7 +147,7 @@ export const ApiService = {
   /**
    * Save configuration updates persistently.
    */
-  async saveConfig(payload: Partial<ApiConfig["ui_defaults"] & ApiConfig["audio"] & ApiConfig["alignment"] & ApiConfig["pdf"] & ApiConfig["video"]>): Promise<{ status: string; message: string }> {
+  async saveConfig(payload: Partial<ApiConfig["ui_defaults"] & ApiConfig["audio"] & ApiConfig["alignment"] & ApiConfig["pdf"] & ApiConfig["video"] & { model_priority: string[] }>): Promise<{ status: string; message: string }> {
     const res = await fetch("/api/config", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -156,6 +158,20 @@ export const ApiService = {
       throw new Error(err || "Failed to save configuration");
     }
     return res.json();
+  },
+
+  /**
+   * Reset configuration to factory defaults.
+   */
+  async resetConfig(): Promise<ApiConfig> {
+    const res = await fetch("/api/config/reset", {
+      method: "POST",
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(err || "Failed to reset configuration");
+    }
+    return this.getConfig();
   },
 
   /**
