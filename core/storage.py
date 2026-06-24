@@ -116,9 +116,26 @@ def load_session(filename: str) -> LectureSession:
     # Upgrade JSON dicts back to Dataclass objects
     segments = [TranscriptSegment(**item) for item in data.get("transcript_segments", [])] if data.get("transcript_segments") else None
     slides = [Slide(**item) for item in data.get("slides", [])] if data.get("slides") else None
-    final_output = [AlignedNote(**item) for item in data.get("final_output", [])] if data.get("final_output") else None
+    
+    # Sanitize and upgrade final_output
+    raw_output = data.get("final_output", [])
+    final_output = None
+    dirty = False
+    if raw_output:
+        final_output = []
+        valid_slide_numbers = set(s.page_number for s in slides) if slides else set()
+        
+        for item in raw_output:
+            note = AlignedNote(**item)
+            if note.slide_number != 0 and note.slide_number not in valid_slide_numbers:
+                logger.warning(f"Sanitizing legacy session {filename}: slide_number {note.slide_number} is out of bounds. Coercing to 0.")
+                note.slide_number = 0
+                note.slide_title = "General / Off-topic"
+                note.is_off_topic = True
+                dirty = True
+            final_output.append(note)
             
-    return LectureSession(
+    session = LectureSession(
         session_name=data.get("session_name", "Untitled"),
         session_description=data.get("session_description"),
         session_id=data.get("session_id"),
@@ -131,3 +148,12 @@ def load_session(filename: str) -> LectureSession:
         pipeline_type=data.get("pipeline_type", "audio"),
         peaks=data.get("peaks")
     )
+    
+    if dirty:
+        try:
+            logger.info(f"Saving sanitized legacy session to disk: {filename}")
+            save_session(session)
+        except Exception as e:
+            logger.warning(f"Failed to save sanitized legacy session: {e}")
+            
+    return session

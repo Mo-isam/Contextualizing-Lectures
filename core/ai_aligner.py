@@ -97,7 +97,7 @@ def _fmt_seconds(s: float) -> str:
     return f"{m:02d}:{sec:02d}"
 
 
-def _build_prompt(slides_text: str, chunk_transcript: str, previous_context: str = "") -> str:
+def _build_prompt(slides_text: str, chunk_transcript: str, max_slide_number: int, previous_context: str = "") -> str:
     prev_block = ""
     if previous_context:
         prev_block = f"\n<previous_context>\n[Do not map this. Provided for conversational flow only]\n{previous_context}\n</previous_context>\n"
@@ -118,7 +118,8 @@ Your job is to MAP the spoken Segment IDs located in the <current_chunk_to_map> 
 3. **Sequential Progression**: Assume the lecture progresses chronologically.
 4. **Segment Mapping**: Return a list of all Segment IDs that belong to a specific slide.
 5. **General Fallback**: If a segment does not match any slide (e.g., greetings, admin, off-topic), map it to slide_number 0.
-6. **AI Insight**: If the professor explains something vital that is NOT written on the slide, summarize it in `ai_insight` (1-2 sentences).
+6. **Valid Slide Numbers**: The only valid slide numbers you can use are from 1 to {max_slide_number}, inclusive. You MUST NOT map segments to any slide number outside this range. If a segment does not match any valid slide, map it to slide_number 0.
+7. **AI Insight**: If the professor explains something vital that is NOT written on the slide, summarize it in `ai_insight` (1-2 sentences).
 
 ## SLIDE TEXT ARRAY
 {slides_text}
@@ -138,7 +139,11 @@ def _process_structured_response(response_text: str, segment_dict: dict[int, Tra
     final_notes = []
     for item in alignments:
         s_num = item.get("slide_number", 0)
-        s_title = slide_dict.get(s_num, f"Slide {s_num}")
+        if s_num not in slide_dict:
+            logger.warning(f"LLM returned slide_number {s_num} which does not exist in presentation slides. Coercing to 0 (General/Off-topic).")
+            s_num = 0
+            
+        s_title = slide_dict.get(s_num, "General / Off-topic")
         insight = item.get("ai_insight", "").strip()
         ids = sorted(item.get("segment_ids", []))
         
@@ -236,8 +241,9 @@ def align_transcript_to_slides(
         if progress_cb:
             progress_cb(pct, chunk_label)
 
+        max_slide_number = len(slides)
         chunk_transcript = _format_chunk_for_prompt(chunk)
-        prompt           = _build_prompt(slides_text, chunk_transcript, previous_context_text)
+        prompt           = _build_prompt(slides_text, chunk_transcript, max_slide_number, previous_context_text)
 
         # Extract the last 3 segments for the NEXT chunk's context. 
         # Note: seg.text does NOT contain the ID, which is exactly what we want.

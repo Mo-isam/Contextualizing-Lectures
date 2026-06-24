@@ -211,13 +211,26 @@ def match_keyframes_to_slides(keyframes: list[dict], slide_images: list[str], sl
                 logger.info(f"Temporal Smoothing: Back-filled {os.path.basename(kf_path)} -> Slide {next_match}")
             else:
                 if strategy in ["hybrid", "ai"] and api_key:
-                    schema = {"type": "OBJECT", "properties": {"slide_number": {"type": "INTEGER"}}, "required": ["slide_number"]}
+                    num_slides = len(slide_images)
+                    valid_slide_numbers = [0] + list(range(1, num_slides + 1))
+                    
+                    schema = {
+                        "type": "OBJECT", 
+                        "properties": {
+                            "slide_number": {
+                                "type": "INTEGER"
+                            }
+                        }, 
+                        "required": ["slide_number"]
+                    }
                     prompt = (
                         "You are an OCR and matching assistant. Look at this video frame. "
                         f"Here is the text array of our presentation: \n\n{slides_text}\n\n"
                         "Does the text/visual in the video frame match any of these slides? "
                         "If yes, return the slide_number. If the video frame shows a web browser, "
-                        "a person, or something entirely unrelated to the presentation, return 0."
+                        "a person, or something entirely unrelated to the presentation, return 0.\n"
+                        f"IMPORTANT: The only valid slide numbers you can return are from 1 to {num_slides}, inclusive, or 0 for off-topic. "
+                        "You MUST NOT return any slide number outside this range."
                     )
                     try:
                         img_obj = Image.open(kf_path)
@@ -230,7 +243,14 @@ def match_keyframes_to_slides(keyframes: list[dict], slide_images: list[str], sl
                             max_retries=2
                         )
                         data = json.loads(response_text)
-                        kf["matched_slide"] = data.get("slide_number", 0)
+                        matched_slide = data.get("slide_number", 0)
+                        
+                        # Validate the returned slide number is within range
+                        if matched_slide not in valid_slide_numbers:
+                            logger.warning(f"AI OCR matched out-of-bounds slide number {matched_slide}. Coercing to 0.")
+                            matched_slide = 0
+                            
+                        kf["matched_slide"] = matched_slide
                         logger.info(f"AI Match: {os.path.basename(kf_path)} -> Slide {kf['matched_slide']}")
                     except Exception as e:
                         logger.error(f"AI Fallback failed for {os.path.basename(kf_path)}: {e}")
