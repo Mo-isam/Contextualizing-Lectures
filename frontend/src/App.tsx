@@ -1,14 +1,14 @@
 import React, { useState } from "react";
 import { HomeView } from "./views/HomeView";
 import { LibraryView } from "./views/LibraryView";
-import { UploadView } from "./views/UploadView";
+import { CreateSessionView } from "./views/CreateSessionView";
 import { ProcessingView } from "./views/ProcessingView";
 import { StudioView } from "./views/StudioView";
 import type { LectureSession } from "./types";
 import { GraduationCap } from "lucide-react";
 import { ApiService } from "./services/api";
 
-type AppStep = "home" | "library" | "upload" | "processing" | "studio";
+type AppStep = "home" | "library" | "create-session" | "processing" | "studio";
 
 export const App: React.FC = () => {
   const [step, setStep] = useState<AppStep>("home");
@@ -20,7 +20,7 @@ export const App: React.FC = () => {
   const handleNewSession = () => {
     setActiveSession(null);
     setPipelineConfig(null);
-    setStep("upload");
+    setStep("create-session");
   };
 
   const handleLoadSession = async (filename: string) => {
@@ -83,7 +83,7 @@ export const App: React.FC = () => {
           <div className="flex items-center gap-4 text-xs font-semibold text-gray-500">
             {step === "home" && <span className="text-blue-400 uppercase tracking-wider bg-blue-500/5 px-3 py-1.5 rounded-lg border border-blue-500/10">Home</span>}
             {step === "library" && <span className="text-purple-400 uppercase tracking-wider bg-purple-500/5 px-3 py-1.5 rounded-lg border border-purple-500/10">Library</span>}
-            {step === "upload" && <span className="text-blue-400 uppercase tracking-wider bg-blue-500/5 px-3 py-1.5 rounded-lg border border-blue-500/10">Upload</span>}
+            {step === "create-session" && <span className="text-blue-400 uppercase tracking-wider bg-blue-500/5 px-3 py-1.5 rounded-lg border border-blue-500/10">New Session</span>}
             {step === "processing" && <span className="text-purple-400 uppercase tracking-wider bg-purple-500/5 px-3 py-1.5 rounded-lg border border-purple-500/10 animate-pulse">Analyzing</span>}
             {step === "studio" && <span className="text-emerald-400 uppercase tracking-wider bg-emerald-500/5 px-3 py-1.5 rounded-lg border border-emerald-500/10">Studio Workspace</span>}
           </div>
@@ -115,8 +115,8 @@ export const App: React.FC = () => {
           />
         )}
 
-        {step === "upload" && (
-          <UploadView
+        {step === "create-session" && (
+          <CreateSessionView
             onBack={() => setStep("home")}
             onStartProcessing={handleStartProcessing}
           />
@@ -126,7 +126,7 @@ export const App: React.FC = () => {
           <ProcessingView
             config={pipelineConfig}
             onComplete={handleProcessingComplete}
-            onCancel={() => setStep("upload")}
+            onCancel={() => setStep("create-session")}
           />
         )}
 

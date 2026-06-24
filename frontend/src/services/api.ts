@@ -159,6 +159,21 @@ export const ApiService = {
   },
 
   /**
+   * Retrieve list of files stored in data_storage files directories.
+   */
+  async getStoredFiles(): Promise<{
+    documents: Array<{ name: string; relative_path: string; size_bytes: number; modified_time: number }>;
+    media: Array<{ name: string; relative_path: string; size_bytes: number; modified_time: number }>;
+  }> {
+    const res = await fetch("/api/files");
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(err || "Failed to list stored files");
+    }
+    return res.json();
+  },
+
+  /**
    * Upload PDF or media file, including auto-converting PPTX to PDF.
    */
   async uploadFile(

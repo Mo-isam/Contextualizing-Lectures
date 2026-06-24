@@ -27,7 +27,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNewSession, onOpenLibrary 
             </div>
             <h3 className="text-2xl font-bold text-gray-100 mb-2">New Lecture</h3>
             <p className="text-gray-400 text-sm leading-relaxed mb-8">
-              Upload a slide PDF (or PPTX) and an audio/video recording to align, annotate, and analyze slide-by-slide concepts.
+              Upload or select a slide PDF (or PPTX) and an audio/video recording to align, annotate, and analyze slide-by-slide concepts.
             </p>
           </div>
           <button

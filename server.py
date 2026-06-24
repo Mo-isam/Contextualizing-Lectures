@@ -377,6 +377,53 @@ def post_config(payload: ConfigUpdateSchema):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/files")
+def get_stored_files():
+    """Retrieve lists of existing documents and media in files/ directories."""
+    try:
+        docs_dir = os.path.join(FILES_DIR, "documents")
+        media_dir = os.path.join(FILES_DIR, "media")
+        
+        documents = []
+        if os.path.exists(docs_dir):
+            for f in os.listdir(docs_dir):
+                f_path = os.path.join(docs_dir, f)
+                if os.path.isfile(f_path) and f.lower().endswith(('.pdf', '.pptx', '.ppt')):
+                    stat = os.stat(f_path)
+                    documents.append({
+                        "name": f,
+                        "relative_path": Path(f_path).relative_to(DATA_STORAGE_DIR).as_posix(),
+                        "size_bytes": stat.st_size,
+                        "modified_time": stat.st_mtime
+                    })
+        
+        media = []
+        if os.path.exists(media_dir):
+            for f in os.listdir(media_dir):
+                f_path = os.path.join(media_dir, f)
+                if os.path.isfile(f_path) and f.lower().endswith(('.mp4', '.mp3', '.wav')):
+                    if f.lower().endswith('_audio.wav'):
+                        continue
+                    stat = os.stat(f_path)
+                    media.append({
+                        "name": f,
+                        "relative_path": Path(f_path).relative_to(DATA_STORAGE_DIR).as_posix(),
+                        "size_bytes": stat.st_size,
+                        "modified_time": stat.st_mtime
+                    })
+        
+        documents.sort(key=lambda x: x["modified_time"], reverse=True)
+        media.sort(key=lambda x: x["modified_time"], reverse=True)
+        
+        return {
+            "documents": documents,
+            "media": media
+        }
+    except Exception as e:
+        logger.error(f"Error listing files: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/upload")
 async def upload_file(
     file: UploadFile = File(...),
