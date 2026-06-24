@@ -163,11 +163,10 @@ def extract_slide_text_ai(image_paths: list[str], api_key: str, models_to_try: l
                 "items": {
                     "type": "OBJECT",
                     "properties": {
-                        "page_number": {"type": "INTEGER"},
                         "title": {"type": "STRING"},
                         "text": {"type": "STRING"}
                     },
-                    "required": ["page_number", "title", "text"]
+                    "required": ["title", "text"]
                 }
             }
         },
@@ -190,8 +189,6 @@ def extract_slide_text_ai(image_paths: list[str], api_key: str, models_to_try: l
         images = [Image.open(p) for p in batch_paths]
         prompt = ["You are a highly accurate OCR system. Extract the exact text from these slides. Do not hallucinate or summarize."] + images
         
-        start_page = i + 1
-        end_page   = min(i + BATCH_SIZE, total_images)
         chunk_success = False
         
         try:
@@ -208,11 +205,24 @@ def extract_slide_text_ai(image_paths: list[str], api_key: str, models_to_try: l
                 max_retries=3
             )
             data = json.loads(response_text)
-            for s in data.get("extracted_slides", []):
+            extracted = data.get("extracted_slides", [])
+            
+            # Map LLM results by index to assign correct, sequential page numbers
+            for idx in range(len(batch_paths)):
+                page_num = start_page + idx
+                if idx < len(extracted):
+                    s = extracted[idx]
+                    title = s.get("title", f"Slide {page_num}").strip()
+                    text = s.get("text", "").strip()
+                else:
+                    logger.warning(f"Gemini returned fewer slides than sent for pages {start_page}-{end_page}. Using placeholder for page {page_num}.")
+                    title = f"Slide {page_num}"
+                    text = "(Text extraction incomplete)"
+                
                 all_slides.append(Slide(
-                    page_number=s.get("page_number", 0),
-                    title=s.get("title", ""),
-                    text=s.get("text", "")
+                    page_number=page_num,
+                    title=title,
+                    text=text if text else "(No text found on this slide)"
                 ))
             chunk_success = True
             
@@ -227,12 +237,25 @@ def extract_slide_text_ai(image_paths: list[str], api_key: str, models_to_try: l
             chunk_success = True # Treated as a successful bypass
             
         except AllModelsFailedError:
+            logger.error(f"All models failed for slides {start_page}-{end_page}. Injecting placeholders.")
+            for p in range(start_page, end_page + 1):
+                all_slides.append(Slide(
+                    page_number=p,
+                    title=f"Slide {p}",
+                    text="(Text extraction failed due to rate limits)"
+                ))
             chunk_success = False
             
         except Exception as e:
-            msg = f"⚠️ Parse error on slides {start_page}-{end_page}: {str(e)}"
+            msg = f"⚠️ Parse error on slides {start_page}-{end_page}: {str(e)}. Injecting placeholders."
             logger.error(msg)
             if progress_cb: progress_cb(i / total_images, msg)
+            for p in range(start_page, end_page + 1):
+                all_slides.append(Slide(
+                    page_number=p,
+                    title=f"Slide {p}",
+                    text="(Text extraction failed due to error)"
+                ))
             chunk_success = False
             
     # Ensure correct page numbering and sorting
