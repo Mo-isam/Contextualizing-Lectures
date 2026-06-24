@@ -13,24 +13,29 @@ export interface SlideBoundary {
 export function calculateSlideBoundaries(notes: AlignedNote[]): SlideBoundary[] {
   if (!notes || notes.length === 0) return [];
   
-  const boundaries: Record<number, { start: number; end: number }> = {};
-  notes.forEach((n) => {
-    if (n.slide_number === 0) return; // Skip general notes
-    if (!boundaries[n.slide_number]) {
-      boundaries[n.slide_number] = { start: n.timestamp_start, end: n.timestamp_end };
+  // 1. Filter out general notes (slide_number === 0) and sort by timestamp_start
+  const sortedNotes = [...notes]
+    .filter((n) => n.slide_number !== 0)
+    .sort((a, b) => a.timestamp_start - b.timestamp_start);
+
+  if (sortedNotes.length === 0) return [];
+
+  // 2. Group contiguous notes of the same slide together
+  const segments: SlideBoundary[] = [];
+  sortedNotes.forEach((n) => {
+    const last = segments[segments.length - 1];
+    if (!last || last.slide !== n.slide_number) {
+      segments.push({
+        slide: n.slide_number,
+        start: n.timestamp_start,
+        end: n.timestamp_end,
+      });
     } else {
-      boundaries[n.slide_number].start = Math.min(boundaries[n.slide_number].start, n.timestamp_start);
-      boundaries[n.slide_number].end = Math.max(boundaries[n.slide_number].end, n.timestamp_end);
+      last.end = Math.max(last.end, n.timestamp_end);
     }
   });
 
-  const segments = Object.entries(boundaries).map(([slide, r]) => ({
-    slide: parseInt(slide),
-    start: r.start,
-    end: r.end,
-  })).sort((a, b) => a.start - b.start);
-
-  // Resolve overlaps by capping the end of each segment at the start of the next
+  // 3. Resolve overlaps by capping the end of each segment at the start of the next
   return segments.map((seg, idx) => {
     const nextSeg = segments[idx + 1];
     const adjustedEnd = nextSeg ? Math.min(seg.end, nextSeg.start) : seg.end;

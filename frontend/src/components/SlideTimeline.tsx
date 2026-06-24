@@ -5,6 +5,7 @@ interface SlideTimelineProps {
   duration: number;
   slideBoundaries: SlideBoundary[];
   activeSlide: number;
+  currentTime: number;
   onSegmentClick: (time: number, slide: number) => void;
   formatTime: (time: number) => string;
 }
@@ -20,6 +21,7 @@ export const SlideTimeline: React.FC<SlideTimelineProps> = ({
   duration,
   slideBoundaries,
   activeSlide,
+  currentTime,
   onSegmentClick,
   formatTime,
 }) => {
@@ -62,19 +64,22 @@ export const SlideTimeline: React.FC<SlideTimelineProps> = ({
             0,
             Math.min(100 - startPct, ((seg.end - seg.start) / duration) * 100)
           );
-          const isActive = activeSlide === seg.slide;
+          const isPlayingSeg = currentTime >= seg.start && currentTime <= seg.end;
+          const isRelatedSeg = seg.slide === activeSlide;
           const isEven = seg.slide % 2 === 0;
 
           return (
             <div
-              key={seg.slide}
+              key={`${seg.slide}-${seg.start}`}
               onClick={() => onSegmentClick(seg.start, seg.slide)}
               className={`absolute top-0 bottom-0 transition-all duration-200 hover:brightness-125 cursor-pointer ${
-                isActive
+                isPlayingSeg
                   ? "bg-gradient-to-r from-blue-500 to-indigo-500 shadow-[0_0_8px_rgba(59,130,246,0.5)] z-10"
-                  : isEven
-                    ? "bg-slate-800/80"
-                    : "bg-slate-600/50"
+                  : isRelatedSeg
+                    ? "bg-gradient-to-r from-purple-500 to-fuchsia-500 shadow-[0_0_8px_rgba(168,85,247,0.4)] z-10"
+                    : isEven
+                      ? "bg-slate-800/80"
+                      : "bg-slate-600/50"
               }`}
               style={{
                 left: `${startPct}%`,

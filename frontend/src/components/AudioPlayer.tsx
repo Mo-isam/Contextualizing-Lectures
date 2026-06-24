@@ -142,6 +142,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
             duration={duration}
             slideBoundaries={slideBoundaries}
             activeSlide={activeSlide}
+            currentTime={currentTime}
             onSegmentClick={handleSegmentClick}
             formatTime={formatTime}
           />
@@ -160,7 +161,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
                 const leftPct = (seg.start / duration) * 100;
                 return (
                   <div
-                    key={seg.slide}
+                    key={`${seg.slide}-${seg.start}`}
                     className="absolute top-0 bottom-0 border-l border-dashed border-blue-500/15 pointer-events-none z-20"
                     style={{ left: `${leftPct}%` }}
                   />
