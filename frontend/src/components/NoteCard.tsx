@@ -5,9 +5,13 @@ import type { AlignedNote } from "../types";
 interface NoteCardProps {
   note: AlignedNote;
   onPlayAt: (time: number) => void;
+  /** True when this note is currently being spoken (playhead inside its time range) */
+  isActive?: boolean;
+  /** True when this card is a tangent note rendered inline within a slide section */
+  isTangentInline?: boolean;
 }
 
-export const NoteCard: React.FC<NoteCardProps> = ({ note, onPlayAt }) => {
+export const NoteCard: React.FC<NoteCardProps> = ({ note, onPlayAt, isActive = false, isTangentInline = false }) => {
   const formatTime = (time: number) => {
     const s = Math.max(0, Math.floor(time));
     const h = Math.floor(s / 3600);
@@ -25,30 +29,53 @@ export const NoteCard: React.FC<NoteCardProps> = ({ note, onPlayAt }) => {
   return (
     <div
       className={`relative rounded-xl p-5 border shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md ${
-        isOffTopic
-          ? "bg-[#1c212a]/95 border-gray-800 hover:border-gray-700"
-          : "bg-gradient-to-br from-[#121c2c]/90 to-[#0e1624]/90 border-[#1f3f6e]/30 hover:border-[#1f3f6e]/60"
+        isActive
+          ? isOffTopic
+            ? "bg-[#1c212a]/95 border-gray-600 shadow-[0_0_16px_rgba(156,163,175,0.12)] -translate-y-0.5"
+            : "bg-gradient-to-br from-[#121c2c]/90 to-[#0e1624]/90 border-blue-500/50 shadow-[0_0_18px_rgba(59,130,246,0.15)] -translate-y-0.5"
+          : isOffTopic
+            ? "bg-[#1c212a]/95 border-gray-800 hover:border-gray-700"
+            : "bg-gradient-to-br from-[#121c2c]/90 to-[#0e1624]/90 border-[#1f3f6e]/30 hover:border-[#1f3f6e]/60"
       }`}
     >
-      {/* Indicator border stripe */}
+      {/* Indicator border stripe — glows brighter when active */}
       <div
-        className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-xl ${
-          isOffTopic ? "bg-gray-500" : "bg-gradient-to-b from-blue-500 to-purple-500"
+        className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-xl transition-all duration-300 ${
+          isOffTopic
+            ? isActive
+              ? "bg-gray-400 shadow-[2px_0_8px_rgba(156,163,175,0.35)]"
+              : "bg-gray-500"
+            : isActive
+              ? "bg-gradient-to-b from-blue-400 to-purple-400 shadow-[2px_0_10px_rgba(59,130,246,0.4)]"
+              : "bg-gradient-to-b from-blue-500 to-purple-500"
         }`}
       />
 
       <div className="flex items-start justify-between gap-3 mb-2.5">
         {/* Badges */}
-        {isOffTopic ? (
-          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold rounded-full bg-gray-800 border border-gray-700 text-gray-400">
-            <MessageSquare className="w-3 h-3" />
-            Tangent
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400">
-            Slide {note.slide_number}
-          </span>
-        )}
+        <div className="flex items-center gap-1.5">
+          {isOffTopic ? (
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold rounded-full bg-gray-800 border border-gray-700 text-gray-400">
+              <MessageSquare className="w-3 h-3" />
+              Tangent
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400">
+              Slide {note.slide_number}
+            </span>
+          )}
+          {isTangentInline && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-bold rounded-full bg-gray-700/60 border border-gray-600/60 text-gray-400 tracking-wide uppercase">
+              <MessageSquare className="w-2.5 h-2.5" />
+              Tangent
+            </span>
+          )}
+          {isActive && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-bold rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300 tracking-wide uppercase animate-pulse">
+              ● Now
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Note Title */}

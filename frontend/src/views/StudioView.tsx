@@ -1,5 +1,6 @@
-import React, { useState } from "react";
-import { ArrowLeft, Save, Download, Search, MessageSquare } from "lucide-react";
+import React, { useState, useMemo } from "react";
+import { ArrowLeft, Save, Download, Search, MessageSquare, LayoutList, AlignJustify } from "lucide-react";
+import { calculateSlideBoundaries } from "../utils/boundaries";
 import { AudioPlayer } from "../components/AudioPlayer";
 import { SlideViewer } from "../components/SlideViewer";
 import { NoteCard } from "../components/NoteCard";
@@ -17,7 +18,10 @@ export const StudioView: React.FC<StudioViewProps> = ({ session, onBack, onSaveC
   const [followMode, setFollowMode] = useState<boolean>(true);
   const [seekTo, setSeekTo] = useState<{ time: number; timestamp: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>(``);
-  const [, setCurrentTime] = useState<number>(0);
+  const [currentTime, setCurrentTime] = useState<number>(0);
+
+  // Group Tangents: true = drawer (legacy), false = inline
+  const [groupTangents, setGroupTangents] = useState<boolean>(true);
 
   // Dialog states
   const [showSaveDialog, setShowSaveDialog] = useState<boolean>(false);
@@ -28,23 +32,77 @@ export const StudioView: React.FC<StudioViewProps> = ({ session, onBack, onSaveC
   const notes: AlignedNote[] = session.final_output || [];
   const slideImages = session.slide_images || [];
 
-  // Filter notes by active slide
-  const slideNotes = notes.filter((n) => n.slide_number === activeSlide);
-  
-  // Filter by search query
-  const filteredNotes = slideNotes.filter((n) => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      n.slide_title.toLowerCase().includes(q) ||
-      n.exact_transcript.toLowerCase().includes(q) ||
-      n.ai_insight.toLowerCase().includes(q)
-    );
-  });
-
   // General off-slide / tangent notes
-  const generalNotes = notes.filter((n) => n.slide_number === 0);
+  const generalNotes = useMemo(() => notes.filter((n) => n.slide_number === 0), [notes]);
   const [showGeneralNotes, setShowGeneralNotes] = useState<boolean>(false);
+
+  // Slide boundaries (for inline tangent association)
+  const slideBoundaries = useMemo(() => calculateSlideBoundaries(notes), [notes]);
+
+  // When inline mode: associate each tangent note with its closest slide segment
+  const inlineTangentsBySlide = useMemo<Record<number, AlignedNote[]>>(() => {
+    if (groupTangents) return {};
+    const map: Record<number, AlignedNote[]> = {};
+    const nonTangentBoundaries = slideBoundaries.filter((s) => s.slide !== 0);
+
+    for (const tangent of generalNotes) {
+      if (nonTangentBoundaries.length === 0) {
+        const slideKey = activeSlide;
+        if (!map[slideKey]) map[slideKey] = [];
+        map[slideKey].push(tangent);
+        continue;
+      }
+
+      let closestSeg = nonTangentBoundaries[0];
+      let minDistance = Infinity;
+
+      for (const seg of nonTangentBoundaries) {
+        let dist = 0;
+        if (tangent.timestamp_start < seg.start) {
+          dist = seg.start - tangent.timestamp_start;
+        } else if (tangent.timestamp_start > seg.end) {
+          dist = tangent.timestamp_start - seg.end;
+        }
+        if (dist < minDistance) {
+          minDistance = dist;
+          closestSeg = seg;
+        }
+      }
+
+      const slideKey = closestSeg.slide;
+      if (!map[slideKey]) map[slideKey] = [];
+      map[slideKey].push(tangent);
+    }
+    return map;
+  }, [groupTangents, generalNotes, slideBoundaries, activeSlide]);
+
+  // Combine slide notes with associated inline tangents (when groupTangents is disabled) and sort chronologically
+  const activeSlideNotesMerged = useMemo(() => {
+    const regular = notes.filter((n) => n.slide_number === activeSlide);
+    const inlineTangents = !groupTangents ? (inlineTangentsBySlide[activeSlide] || []) : [];
+    return [...regular, ...inlineTangents].sort((a, b) => a.timestamp_start - b.timestamp_start);
+  }, [notes, activeSlide, groupTangents, inlineTangentsBySlide]);
+
+  // Filter notes by search query
+  const filteredNotes = useMemo(() => {
+    return activeSlideNotesMerged.filter((n) => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        n.slide_title.toLowerCase().includes(q) ||
+        n.exact_transcript.toLowerCase().includes(q) ||
+        (n.ai_insight && n.ai_insight.toLowerCase().includes(q))
+      );
+    });
+  }, [activeSlideNotesMerged, searchQuery]);
+
+  // Derive which note the playhead is currently inside
+  const activeNoteId = useMemo(() => {
+    const active = notes.find(
+      (n) => currentTime >= n.timestamp_start && currentTime <= n.timestamp_end
+    );
+    return active ? `${active.timestamp_start}-${active.timestamp_end}` : null;
+  }, [notes, currentTime]);
 
   // Handle play at seek requests
   const handlePlayAt = (time: number) => {
@@ -167,8 +225,31 @@ export const StudioView: React.FC<StudioViewProps> = ({ session, onBack, onSaveC
 
         {/* Scrollable Notes Column (40% / 2 cols) */}
         <div className="md:col-span-2 space-y-4">
-          {/* General Notes Expander */}
-          {generalNotes.length > 0 && (
+          {/* Notes column header: label + Group Tangents toggle */}
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase font-bold tracking-wider text-blue-400 select-none">
+              🗒 Lecture Notes
+            </span>
+            {generalNotes.length > 0 && (
+              <button
+                onClick={() => setGroupTangents((v) => !v)}
+                title={groupTangents ? "Switch to Inline Tangents" : "Switch to Grouped Tangents"}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-semibold border transition-all cursor-pointer ${
+                  groupTangents
+                    ? "bg-gray-900 border-gray-700 text-gray-400 hover:border-gray-600"
+                    : "bg-blue-500/10 border-blue-500/30 text-blue-400 hover:border-blue-500/50"
+                }`}
+              >
+                {groupTangents ? (
+                  <><LayoutList className="w-3.5 h-3.5" /> Group Tangents</>
+                ) : (
+                  <><AlignJustify className="w-3.5 h-3.5" /> Inline Tangents</>
+                )}
+              </button>
+            )}
+          </div>
+          {/* General Notes Expander — only shown when groupTangents is ON */}
+          {groupTangents && generalNotes.length > 0 && (
             <div className="border border-gray-800 rounded-xl overflow-hidden bg-[#121820]/40">
               <button
                 onClick={() => setShowGeneralNotes(!showGeneralNotes)}
@@ -213,9 +294,18 @@ export const StudioView: React.FC<StudioViewProps> = ({ session, onBack, onSaveC
             </div>
 
             {filteredNotes.length > 0 ? (
-              filteredNotes.map((note, i) => (
-                <NoteCard key={i} note={note} onPlayAt={handlePlayAt} />
-              ))
+              filteredNotes.map((note) => {
+                const noteId = `${note.timestamp_start}-${note.timestamp_end}`;
+                return (
+                  <NoteCard
+                    key={noteId}
+                    note={note}
+                    onPlayAt={handlePlayAt}
+                    isActive={activeNoteId === noteId}
+                    isTangentInline={note.slide_number === 0}
+                  />
+                );
+              })
             ) : (
               <div className="border border-dashed border-blue-500/15 rounded-2xl p-10 text-center bg-gray-950/5">
                 <div className="text-3xl mb-3 text-blue-500/20">🧠</div>

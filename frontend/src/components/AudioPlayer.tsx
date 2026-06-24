@@ -92,7 +92,9 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     if (wavesurfer && !wavesurfer.isPlaying()) {
       wavesurfer.play().catch(console.error);
     }
-    onSlideChange(slide);
+    if (slide !== 0) {
+      onSlideChange(slide);
+    }
     setFollowMode(true);
   }, [wavesurfer, seekToTime, onSlideChange, setFollowMode]);
 

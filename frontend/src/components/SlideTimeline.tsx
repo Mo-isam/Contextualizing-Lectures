@@ -66,6 +66,7 @@ export const SlideTimeline: React.FC<SlideTimelineProps> = ({
           );
           const isPlayingSeg = currentTime >= seg.start && currentTime <= seg.end;
           const isRelatedSeg = seg.slide === activeSlide;
+          const isTangentSeg = seg.slide === 0;
           const isEven = seg.slide % 2 === 0;
 
           return (
@@ -73,13 +74,17 @@ export const SlideTimeline: React.FC<SlideTimelineProps> = ({
               key={`${seg.slide}-${seg.start}`}
               onClick={() => onSegmentClick(seg.start, seg.slide)}
               className={`absolute top-0 bottom-0 transition-all duration-200 hover:brightness-125 cursor-pointer ${
-                isPlayingSeg
-                  ? "bg-gradient-to-r from-blue-500 to-indigo-500 shadow-[0_0_8px_rgba(59,130,246,0.5)] z-10"
-                  : isRelatedSeg
-                    ? "bg-gradient-to-r from-purple-500 to-fuchsia-500 shadow-[0_0_8px_rgba(168,85,247,0.4)] z-10"
-                    : isEven
-                      ? "bg-slate-800/80"
-                      : "bg-slate-600/50"
+                isTangentSeg
+                  ? isPlayingSeg
+                    ? "bg-gradient-to-r from-gray-500/70 to-gray-400/50 shadow-[0_0_8px_rgba(156,163,175,0.45)] z-10"
+                    : "bg-[#070b0f]"
+                  : isPlayingSeg
+                    ? "bg-gradient-to-r from-blue-500 to-indigo-500 shadow-[0_0_8px_rgba(59,130,246,0.5)] z-10"
+                    : isRelatedSeg
+                      ? "bg-gradient-to-r from-purple-500 to-fuchsia-500 shadow-[0_0_8px_rgba(168,85,247,0.4)] z-10"
+                      : isEven
+                        ? "bg-slate-800/80"
+                        : "bg-slate-600/50"
               }`}
               style={{
                 left: `${startPct}%`,
@@ -89,13 +94,14 @@ export const SlideTimeline: React.FC<SlideTimelineProps> = ({
           );
         })}
 
+
       {/* Hover Tooltip for Slide timeline */}
       {timelineHover && (
         <div
           className="absolute bottom-full mb-2 bg-[#090d14]/95 border border-blue-500/30 text-[10px] text-gray-200 px-2.5 py-1 rounded-lg shadow-xl pointer-events-none z-30 font-mono -translate-x-1/2 whitespace-nowrap"
           style={{ left: `${timelineHover.x}px` }}
         >
-          Slide {timelineHover.slide}{" "}
+          {timelineHover.slide === 0 ? "Tangent Zone" : `Slide ${timelineHover.slide}`}{" "}
           <span className="text-gray-400 font-sans font-normal">
             ({formatTime(timelineHover.start)} - {formatTime(timelineHover.end)})
           </span>

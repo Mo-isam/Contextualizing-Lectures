@@ -13,9 +13,8 @@ export interface SlideBoundary {
 export function calculateSlideBoundaries(notes: AlignedNote[]): SlideBoundary[] {
   if (!notes || notes.length === 0) return [];
   
-  // 1. Filter out general notes (slide_number === 0) and sort by timestamp_start
+  // 1. Sort by timestamp_start
   const sortedNotes = [...notes]
-    .filter((n) => n.slide_number !== 0)
     .sort((a, b) => a.timestamp_start - b.timestamp_start);
 
   if (sortedNotes.length === 0) return [];
@@ -53,7 +52,7 @@ export function calculateSlideBoundaries(notes: AlignedNote[]): SlideBoundary[] 
 export function getSlideAtTime(time: number, slideBoundaries: SlideBoundary[]): number | null {
   let bestSlide = null;
   for (const seg of slideBoundaries) {
-    if (time >= seg.start) {
+    if (seg.slide !== 0 && time >= seg.start) {
       bestSlide = seg.slide;
     }
   }
