@@ -317,10 +317,10 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({ config, onComple
                         nameClass = "text-amber-400 font-bold";
                         cardClass = "bg-amber-950/5 border-amber-500/20";
                       } else if (modelStatus === "error") {
-                        stateLabel = "Swapping";
-                        badgeClass = "border-amber-500/30 text-amber-400 bg-amber-500/10 font-bold";
-                        nameClass = "text-amber-400 font-bold";
-                        cardClass = "bg-amber-950/5 border-amber-500/20";
+                        stateLabel = "Failed";
+                        badgeClass = "border-red-500/30 text-red-400 bg-red-500/10 font-bold";
+                        nameClass = "text-red-400 font-bold";
+                        cardClass = "bg-red-950/5 border-red-500/20 shadow-[0_0_12px_rgba(239,68,68,0.05)]";
                       }
                     }
 

@@ -296,6 +296,7 @@ def generate_content_with_fallback(
                             dead_models=list(_dead_models),
                             model_call_stats=dict(_model_call_stats)
                         )
+                        time.sleep(2)  # Give the UI time to show the error state before swapping
                     break  # Break attempt loop, move to next model in models_to_try
                     
                 # 3. Rate Limit (429), Overload (503), or Transient Error
