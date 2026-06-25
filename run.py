@@ -124,12 +124,13 @@ def main():
     )
 
     # Start non-blocking logging threads
-    t1 = threading.Thread(target=log_stream, args=(backend_proc.stdout, "[Backend]", CYAN), daemon=True)
-    t2 = threading.Thread(target=log_stream, args=(backend_proc.stderr, "[Backend-Err]", RED), daemon=True)
-    t3 = threading.Thread(target=log_stream, args=(frontend_proc.stdout, "[Frontend]", GREEN), daemon=True)
-    t4 = threading.Thread(target=log_stream, args=(frontend_proc.stderr, "[Frontend-Err]", RED), daemon=True)
-
-    for t in [t1, t2, t3, t4]:
+    threads = [
+        threading.Thread(target=log_stream, args=(backend_proc.stdout, "[Backend]", CYAN), daemon=True),
+        threading.Thread(target=log_stream, args=(backend_proc.stderr, "[Backend-Err]", RED), daemon=True),
+        threading.Thread(target=log_stream, args=(frontend_proc.stdout, "[Frontend]", GREEN), daemon=True),
+        threading.Thread(target=log_stream, args=(frontend_proc.stderr, "[Frontend-Err]", RED), daemon=True)
+    ]
+    for t in threads:
         t.start()
 
     # Automatically open web browser once servers are initialized
