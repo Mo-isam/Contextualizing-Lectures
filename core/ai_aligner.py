@@ -97,6 +97,22 @@ def _fmt_seconds(s: float) -> str:
     return f"{m:02d}:{sec:02d}"
 
 
+def _group_consecutive_ids(ids: list[int]) -> list[list[int]]:
+    """Group non-consecutive segment IDs into continuous sequential blocks."""
+    if not ids:
+        return []
+    blocks = []
+    current = [ids[0]]
+    for idx in ids[1:]:
+        if idx == current[-1] + 1:
+            current.append(idx)
+        else:
+            blocks.append(current)
+            current = [idx]
+    blocks.append(current)
+    return blocks
+
+
 def _build_prompt(slides_text: str, chunk_transcript: str, max_slide_number: int, previous_context: str = "") -> str:
     prev_block = ""
     if previous_context:
@@ -150,15 +166,7 @@ def _process_structured_response(response_text: str, segment_dict: dict[int, Tra
         if not ids: continue
         
         # Group non-consecutive IDs into continuous sequential blocks
-        blocks = []
-        current = [ids[0]]
-        for i in range(1, len(ids)):
-            if ids[i] == current[-1] + 1:
-                current.append(ids[i])
-            else:
-                blocks.append(current)
-                current = [ids[i]]
-        blocks.append(current)
+        blocks = _group_consecutive_ids(ids)
         
         # For each continuous block, calculate perfect timestamps and stitch the exact transcript
         for block in blocks:
@@ -462,15 +470,7 @@ def align_video_to_slides(
             if not target_ids: return
             target_ids.sort()
             
-            blocks_of_ids = []
-            current = [target_ids[0]]
-            for i in range(1, len(target_ids)):
-                if target_ids[i] == current[-1] + 1:
-                    current.append(target_ids[i])
-                else:
-                    blocks_of_ids.append(current)
-                    current = [target_ids[i]]
-            blocks_of_ids.append(current)
+            blocks_of_ids = _group_consecutive_ids(target_ids)
             
             segment_dict = {seg.id: seg for seg in block_segs}
             
