@@ -5,6 +5,7 @@ repomix-output.xml
 workspace.code-workspace
 __pycache__
 .git
+.agents
 data
 .vscode
 data_storage
