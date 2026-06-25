@@ -394,6 +394,27 @@ def reset_config():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _list_files_in_dir(directory: str, extensions: tuple, exclude_suffix: str = None) -> list[dict]:
+    """Helper to retrieve, format and sort files in a directory."""
+    if not os.path.exists(directory):
+        return []
+    files = []
+    for f in os.listdir(directory):
+        f_path = os.path.join(directory, f)
+        if os.path.isfile(f_path) and f.lower().endswith(extensions):
+            if exclude_suffix and f.lower().endswith(exclude_suffix):
+                continue
+            stat = os.stat(f_path)
+            files.append({
+                "name": f,
+                "relative_path": Path(f_path).relative_to(DATA_STORAGE_DIR).as_posix(),
+                "size_bytes": stat.st_size,
+                "modified_time": stat.st_mtime
+            })
+    files.sort(key=lambda x: x["modified_time"], reverse=True)
+    return files
+
+
 @app.get("/api/files")
 def get_stored_files():
     """Retrieve lists of existing documents and media in files/ directories."""
@@ -401,40 +422,9 @@ def get_stored_files():
         docs_dir = os.path.join(FILES_DIR, "documents")
         media_dir = os.path.join(FILES_DIR, "media")
         
-        documents = []
-        if os.path.exists(docs_dir):
-            for f in os.listdir(docs_dir):
-                f_path = os.path.join(docs_dir, f)
-                if os.path.isfile(f_path) and f.lower().endswith(('.pdf', '.pptx', '.ppt')):
-                    stat = os.stat(f_path)
-                    documents.append({
-                        "name": f,
-                        "relative_path": Path(f_path).relative_to(DATA_STORAGE_DIR).as_posix(),
-                        "size_bytes": stat.st_size,
-                        "modified_time": stat.st_mtime
-                    })
-        
-        media = []
-        if os.path.exists(media_dir):
-            for f in os.listdir(media_dir):
-                f_path = os.path.join(media_dir, f)
-                if os.path.isfile(f_path) and f.lower().endswith(('.mp4', '.mp3', '.wav')):
-                    if f.lower().endswith('_audio.wav'):
-                        continue
-                    stat = os.stat(f_path)
-                    media.append({
-                        "name": f,
-                        "relative_path": Path(f_path).relative_to(DATA_STORAGE_DIR).as_posix(),
-                        "size_bytes": stat.st_size,
-                        "modified_time": stat.st_mtime
-                    })
-        
-        documents.sort(key=lambda x: x["modified_time"], reverse=True)
-        media.sort(key=lambda x: x["modified_time"], reverse=True)
-        
         return {
-            "documents": documents,
-            "media": media
+            "documents": _list_files_in_dir(docs_dir, ('.pdf', '.pptx', '.ppt')),
+            "media": _list_files_in_dir(media_dir, ('.mp4', '.mp3', '.wav'), exclude_suffix='_audio.wav')
         }
     except Exception as e:
         logger.error(f"Error listing files: {e}")
