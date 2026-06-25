@@ -185,6 +185,14 @@ def extract_slide_text_ai(image_paths: list[str], api_key: str, models_to_try: l
         if progress_cb:
             progress_cb(pct, f"👁️ AI reading slides {start_page} to {end_page} (out of {total_images} total)...")
             
+        def append_placeholders(error_text: str):
+            for p in range(start_page, end_page + 1):
+                all_slides.append(Slide(
+                    page_number=p,
+                    title=f"Slide {p}",
+                    text=error_text
+                ))
+
         # Load images for Gemini
         images = [Image.open(p) for p in batch_paths]
         prompt = ["You are a highly accurate OCR system. Extract the exact text from these slides. Do not hallucinate or summarize."] + images
@@ -228,34 +236,19 @@ def extract_slide_text_ai(image_paths: list[str], api_key: str, models_to_try: l
             
         except SafetyFilterError:
             # If AI refuses to read due to copyright/safety, inject placeholders
-            for p in range(start_page, end_page + 1):
-                all_slides.append(Slide(
-                    page_number=p, 
-                    title=f"Slide {p}", 
-                    text="(Text extraction blocked by AI safety/copyright filter)"
-                ))
+            append_placeholders("(Text extraction blocked by AI safety/copyright filter)")
             chunk_success = True # Treated as a successful bypass
             
         except AllModelsFailedError:
             logger.error(f"All models failed for slides {start_page}-{end_page}. Injecting placeholders.")
-            for p in range(start_page, end_page + 1):
-                all_slides.append(Slide(
-                    page_number=p,
-                    title=f"Slide {p}",
-                    text="(Text extraction failed due to rate limits)"
-                ))
+            append_placeholders("(Text extraction failed due to rate limits)")
             chunk_success = False
             
         except Exception as e:
             msg = f"⚠️ Parse error on slides {start_page}-{end_page}: {str(e)}. Injecting placeholders."
             logger.error(msg)
             if progress_cb: progress_cb(i / total_images, msg)
-            for p in range(start_page, end_page + 1):
-                all_slides.append(Slide(
-                    page_number=p,
-                    title=f"Slide {p}",
-                    text="(Text extraction failed due to error)"
-                ))
+            append_placeholders("(Text extraction failed due to error)")
             chunk_success = False
             
     # Ensure correct page numbering and sorting
