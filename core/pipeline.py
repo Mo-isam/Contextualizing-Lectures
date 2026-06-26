@@ -4,12 +4,9 @@ import logging
 import threading
 from typing import Callable, Optional
 
-from core.storage import DATA_STORAGE_DIR, FILES_DIR, resolve_data_path
+from core.storage import DATA_STORAGE_DIR, FILES_DIR, TMP_DIR, resolve_data_path
 
 logger = logging.getLogger(__name__)
-
-TMP_DIR = os.path.join(os.path.dirname(FILES_DIR), "tmp")
-os.makedirs(TMP_DIR, exist_ok=True)
 
 class PipelineCancelledError(BaseException):
     """Exception raised when the pipeline execution is cancelled by client disconnect."""

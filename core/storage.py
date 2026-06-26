@@ -21,6 +21,8 @@ ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
 DATA_STORAGE_DIR = os.path.join(ROOT_DIR, "data_storage")
 SESSIONS_DIR = os.path.join(DATA_STORAGE_DIR, "sessions")
 FILES_DIR = os.path.join(DATA_STORAGE_DIR, "files")
+TMP_DIR = os.path.join(os.path.dirname(FILES_DIR), "tmp")
+os.makedirs(TMP_DIR, exist_ok=True)
 
 
 def resolve_data_path(rel_path: str) -> str:

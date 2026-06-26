@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # Import core modules
-from core.storage import save_session, load_session, list_saved_sessions, resolve_data_path, atomic_write_json, DATA_STORAGE_DIR, FILES_DIR
+from core.storage import save_session, load_session, list_saved_sessions, resolve_data_path, atomic_write_json, DATA_STORAGE_DIR, FILES_DIR, TMP_DIR
 from core.file_utils import save_file, convert_pptx_to_pdf
 from core.models import TranscriptSegment, Slide, AlignedNote, LectureSession
 from core.config import app_config
@@ -81,9 +81,6 @@ os.makedirs(os.path.join(FILES_DIR, "media"), exist_ok=True)
 # Mount Static Directories for direct file serving (no base64 overhead)
 app.mount("/data", StaticFiles(directory=DATA_STORAGE_DIR), name="data")
 
-# Mount temp dir if it exists, otherwise create it first
-TMP_DIR = os.path.join(os.path.dirname(FILES_DIR), "tmp")
-os.makedirs(TMP_DIR, exist_ok=True)
 app.mount("/tmp", StaticFiles(directory=TMP_DIR), name="tmp")
 
 
