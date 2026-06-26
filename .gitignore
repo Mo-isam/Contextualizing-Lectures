@@ -12,6 +12,7 @@ data
 data_storage
 config.yaml
 
-# Ignore all markdown files (notes, walkthroughs, etc.) except READMEs
+# Ignore all markdown files (notes, walkthroughs, etc.) except READMEs and docs/
 *.md
 !README.md
+!docs/*.md

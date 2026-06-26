@@ -1,4 +1,12 @@
-### `core/system_loader.py`
+"""
+system_loader.py
+----------------
+Smart pre-flight dependency loader for the processing pipeline.
+
+Uses a Strategy Pattern to parse user settings and lazy-load
+heavy dependencies (PyTorch, OpenCV, PyMuPDF) only when the
+user has explicitly chosen a configuration that requires them.
+"""
 import time
 
 def _load_llm_client():
