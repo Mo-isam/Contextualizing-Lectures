@@ -34,6 +34,14 @@ def resolve_data_path(rel_path: str) -> str:
     return os.path.join(DATA_STORAGE_DIR, os.path.normpath(rel_path))
 
 
+def atomic_write_json(file_path: str, data: dict) -> None:
+    """Write a JSON dict to a file atomically — write to .tmp then replace."""
+    tmp_file = f"{file_path}.tmp"
+    with open(tmp_file, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp_file, file_path)
+
+
 def save_session(session_data: LectureSession, temp_dir: str = None) -> str:
     """Save the current processed lecture session to local storage."""
     os.makedirs(SESSIONS_DIR, exist_ok=True)
@@ -77,13 +85,7 @@ def save_session(session_data: LectureSession, temp_dir: str = None) -> str:
     }
 
     session_file = os.path.join(SESSIONS_DIR, f"{session_id}.json")
-    tmp_file = f"{session_file}.tmp"
-    
-    # Atomic write: write to temp file first, then replace
-    with open(tmp_file, "w", encoding="utf-8") as f:
-        json.dump(metadata, f, ensure_ascii=False, indent=2)
-    os.replace(tmp_file, session_file)
-
+    atomic_write_json(session_file, metadata)
     return session_file
 
 

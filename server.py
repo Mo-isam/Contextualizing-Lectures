@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # Import core modules
-from core.storage import save_session, load_session, list_saved_sessions, resolve_data_path, DATA_STORAGE_DIR, FILES_DIR
+from core.storage import save_session, load_session, list_saved_sessions, resolve_data_path, atomic_write_json, DATA_STORAGE_DIR, FILES_DIR
 from core.file_utils import save_file, convert_pptx_to_pdf
 from core.models import TranscriptSegment, Slide, AlignedNote, LectureSession
 from core.config import app_config
@@ -266,11 +266,7 @@ def update_session_metadata(filename: str, payload: UpdateMetadataSchema):
         data["session_description"] = payload.session_description
         data["timestamp"] = time.time()
         
-        # Write back atomically
-        tmp_file = f"{file_path}.tmp"
-        with open(tmp_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp_file, file_path)
+        atomic_write_json(file_path, data)
         
         return {"status": "success", "message": "Session metadata updated."}
     except Exception as e:
