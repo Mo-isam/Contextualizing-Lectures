@@ -7,57 +7,23 @@ import logging
 import asyncio
 import threading
 from pathlib import Path
-from typing import List, Dict, Any, Optional
 
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
 
-# Import core modules
 from core.storage import save_session, load_session, list_saved_sessions, resolve_data_path, atomic_write_json, DATA_STORAGE_DIR, FILES_DIR, TMP_DIR
 from core.file_utils import save_file, convert_pptx_to_pdf
 from core.models import TranscriptSegment, Slide, AlignedNote, LectureSession
 from core.config import app_config
 from core.pipeline import PipelineJob, PipelineCancelledError
+from core.schemas import (AlignedNoteSchema, SlideSchema, TranscriptSegmentSchema,
+                          SaveSessionSchema, UpdateMetadataSchema, ConfigUpdateSchema)
+from core.logging_setup import ProcessLabelFilter, configure_root_logger
 
-# Custom logging filter and formatter to categorize processes
-class ProcessLabelFilter(logging.Filter):
-    def filter(self, record):
-        name = record.name
-        if "audio_processor" in name:
-            record.process_label = "Audio"
-        elif "video_processor" in name:
-            record.process_label = "Video"
-        elif "ai_aligner" in name:
-            record.process_label = "Alignment"
-        elif "llm_service" in name:
-            record.process_label = "LLM"
-        elif "pipeline" in name:
-            record.process_label = "Pipeline"
-        elif "server" in name or name == "__main__":
-            record.process_label = "Server"
-        elif "uvicorn" in name:
-            record.process_label = "Server"
-        else:
-            # Fallback to general submodule name
-            record.process_label = name.split(".")[-1].capitalize()
-        return True
-
-# Initialize stdout handler
-stdout_handler = logging.StreamHandler(sys.stdout)
-stdout_handler.addFilter(ProcessLabelFilter())
-stdout_handler.setFormatter(logging.Formatter("[%(process_label)s] %(levelname)s: %(message)s"))
-
-# Configure root logger
-root_logger = logging.getLogger()
-root_logger.setLevel(logging.INFO)
-# Clear existing handlers if any
-for h in list(root_logger.handlers):
-    root_logger.removeHandler(h)
-root_logger.addHandler(stdout_handler)
+configure_root_logger()
 
 logger = logging.getLogger(__name__)
 
@@ -82,61 +48,6 @@ os.makedirs(os.path.join(FILES_DIR, "media"), exist_ok=True)
 app.mount("/data", StaticFiles(directory=DATA_STORAGE_DIR), name="data")
 
 app.mount("/tmp", StaticFiles(directory=TMP_DIR), name="tmp")
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# MODELS & SCHEMAS
-# ═══════════════════════════════════════════════════════════════════════════════
-class AlignedNoteSchema(BaseModel):
-    slide_number: int
-    slide_title: str
-    exact_transcript: str
-    timestamp_start: float
-    timestamp_end: float
-    ai_insight: str
-    is_off_topic: bool = False
-
-class SlideSchema(BaseModel):
-    page_number: int
-    title: str
-    text: str
-
-class TranscriptSegmentSchema(BaseModel):
-    id: int
-    start: float
-    end: float
-    text: str
-
-class SaveSessionSchema(BaseModel):
-    session_name: str
-    session_description: str
-    pdf_path: str
-    media_path: str
-    transcript_segments: List[TranscriptSegmentSchema]
-    slides: List[SlideSchema]
-    final_output: List[AlignedNoteSchema]
-    pipeline_type: str = "audio"
-    peaks: Optional[List[float]] = None
-    session_id: Optional[str] = None
-
-class UpdateMetadataSchema(BaseModel):
-    session_name: str
-    session_description: str
-
-class ConfigUpdateSchema(BaseModel):
-    is_paid_api: Optional[bool] = None
-    default_model: Optional[str] = None
-    pdf_engine: Optional[str] = None
-    tx_engine: Optional[str] = None
-    whisper_model_size: Optional[str] = None
-    sample_rate: Optional[int] = None
-    min_chunk_duration_sec: Optional[int] = None
-    max_chunk_duration_sec: Optional[int] = None
-    render_zoom: Optional[float] = None
-    matching_strategy: Optional[str] = None
-    frame_sample_rate: Optional[int] = None
-    ssim_threshold: Optional[float] = None
-    model_priority: Optional[List[str]] = None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
