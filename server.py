@@ -15,7 +15,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from core.storage import save_session, load_session, list_saved_sessions, resolve_data_path, atomic_write_json, DATA_STORAGE_DIR, FILES_DIR, TMP_DIR
-from core.file_utils import save_file, convert_pptx_to_pdf
+from core.file_utils import save_file
+from core.pptx_converter import convert_pptx_to_pdf
 from core.models import TranscriptSegment, Slide, AlignedNote, LectureSession
 from core.config import app_config
 from core.pipeline import PipelineJob, PipelineCancelledError
