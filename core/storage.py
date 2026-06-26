@@ -23,6 +23,17 @@ SESSIONS_DIR = os.path.join(DATA_STORAGE_DIR, "sessions")
 FILES_DIR = os.path.join(DATA_STORAGE_DIR, "files")
 
 
+def resolve_data_path(rel_path: str) -> str:
+    """Resolve a path relative to DATA_STORAGE_DIR to an absolute path.
+
+    If the path is already absolute, os.path.join returns it unchanged.
+    If the path is empty or None, it is returned as-is.
+    """
+    if not rel_path:
+        return rel_path
+    return os.path.join(DATA_STORAGE_DIR, os.path.normpath(rel_path))
+
+
 def save_session(session_data: LectureSession, temp_dir: str = None) -> str:
     """Save the current processed lecture session to local storage."""
     os.makedirs(SESSIONS_DIR, exist_ok=True)
@@ -109,9 +120,8 @@ def load_session(filename: str) -> LectureSession:
         
     for key in ["pdf_path", "media_path"]:
         val = data.get(key)
-        if val and val.startswith("files/"):
-            # os.path.normpath converts 'files/documents/x' safely on both Windows & Mac
-            data[key] = os.path.join(DATA_STORAGE_DIR, os.path.normpath(val))
+        if val:
+            data[key] = resolve_data_path(val)
             
     # Upgrade JSON dicts back to Dataclass objects
     segments = [TranscriptSegment(**item) for item in data.get("transcript_segments", [])] if data.get("transcript_segments") else None

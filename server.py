@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # Import core modules
-from core.storage import save_session, load_session, list_saved_sessions, DATA_STORAGE_DIR, FILES_DIR
+from core.storage import save_session, load_session, list_saved_sessions, resolve_data_path, DATA_STORAGE_DIR, FILES_DIR
 from core.file_utils import save_file, convert_pptx_to_pdf
 from core.models import TranscriptSegment, Slide, AlignedNote, LectureSession
 from core.config import app_config
@@ -221,8 +221,8 @@ def post_save_session(payload: SaveSessionSchema):
     """Save session details to persistent storage."""
     try:
         # Convert relative paths back to absolute paths
-        abs_pdf = str(Path(DATA_STORAGE_DIR) / os.path.normpath(payload.pdf_path))
-        abs_media = str(Path(DATA_STORAGE_DIR) / os.path.normpath(payload.media_path))
+        abs_pdf = resolve_data_path(payload.pdf_path)
+        abs_media = resolve_data_path(payload.media_path)
 
         # Reconstruct dataclasses
         segments = [TranscriptSegment(**s.model_dump()) for s in payload.transcript_segments]

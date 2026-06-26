@@ -4,7 +4,7 @@ import logging
 import threading
 from typing import Callable, Optional
 
-from core.storage import DATA_STORAGE_DIR, FILES_DIR
+from core.storage import DATA_STORAGE_DIR, FILES_DIR, resolve_data_path
 
 logger = logging.getLogger(__name__)
 
@@ -94,8 +94,8 @@ class PipelineJob:
         from core.ai_aligner import align_transcript_to_slides, align_video_to_slides
 
         # Resolve paths to absolute paths
-        abs_pdf_path = os.path.join(DATA_STORAGE_DIR, os.path.normpath(self.pdf_path))
-        abs_media_path = os.path.join(DATA_STORAGE_DIR, os.path.normpath(self.media_path))
+        abs_pdf_path = resolve_data_path(self.pdf_path)
+        abs_media_path = resolve_data_path(self.media_path)
 
         # Create session temp folder
         session_temp_dir = os.path.join(TMP_DIR, f"session_{uuid.uuid4().hex[:8]}")
