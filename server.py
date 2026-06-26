@@ -95,7 +95,7 @@ def get_session(filename: str):
         # On-demand legacy session peak generation upgrade
         if not session.peaks and session.media_path and Path(session.media_path).exists():
             try:
-                from core.audio_processor import generate_peaks
+                from core.audio_analysis import generate_peaks
                 logger.info(f"Generating missing peaks for legacy session: {session.session_name}")
                 session.peaks = generate_peaks(session.media_path)
                 # Re-save session with peaks to cache it

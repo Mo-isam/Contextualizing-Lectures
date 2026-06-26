@@ -183,7 +183,7 @@ class PipelineJob:
         # Generate audio peaks for visualizer waveform rendering
         self.send_status("alignment", 0.95, "Generating audio visualizer waveform peaks...")
         try:
-            from core.audio_processor import generate_peaks
+            from core.audio_analysis import generate_peaks
             peaks = generate_peaks(abs_media_path)
         except Exception as e:
             logger.warning(f"Failed to generate peaks during pipeline: {e}")
