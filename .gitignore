@@ -5,14 +5,21 @@ repomix-output.xml
 workspace.code-workspace
 __pycache__
 .git
-.agents
+!.agents/
+.agents/*
 data
 .vscode
 .reasonix
 data_storage
 config.yaml
 
-# Ignore all markdown files (notes, walkthroughs, etc.) except READMEs and docs/
+# Ignore all markdown files (notes, walkthroughs, etc.) except READMEs, docs, and key files
 *.md
 !README.md
 !docs/*.md
+!docs/adr/*.md
+!CHANGELOG.md
+!.agents/AGENTS.md
+
+# Ignore session walkthroughs and history
+docs/sessions/

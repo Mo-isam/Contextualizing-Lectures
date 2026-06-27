@@ -4,7 +4,7 @@ import logging
 import threading
 from typing import Callable, Optional
 
-from core.storage import DATA_STORAGE_DIR, FILES_DIR, TMP_DIR, resolve_data_path
+from core.storage import TMP_DIR, resolve_data_path
 
 logger = logging.getLogger(__name__)
 
