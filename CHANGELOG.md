@@ -5,6 +5,8 @@ All notable changes to this project are documented in this file.
 ---
 
 ## [Unreleased]
+
+## [1.1.5] - 2026-07-17
 ### Added
 - Added presentation generation scripts under `scratch/` using `pptxgenjs` to render high-quality academic presentations.
 - Generated `Contextualizing_Lectures_Presentation.pptx` in the workspace root summarizing system architecture, video/audio pipelines, and UI.
