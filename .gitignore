@@ -12,6 +12,8 @@ data
 .reasonix
 data_storage
 config.yaml
+.venv/
+
 
 # Ignore all markdown files (notes, walkthroughs, etc.) except READMEs, docs, and key files
 *.md

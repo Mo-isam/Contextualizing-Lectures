@@ -39,7 +39,8 @@ Contextualizing-Lectures-React/
 │   └── vite.config.ts      # Vite dev server with reverse proxy settings
 ├── data_storage/           # Local session library database (JSON)
 ├── server.py               # FastAPI server entrypoint
-└── requirements.txt        # Python backend dependencies
+├── pyproject.toml          # Project metadata and python dependencies
+└── uv.lock                 # Deterministic dependency lockfile
 ```
 
 ---
@@ -47,19 +48,22 @@ Contextualizing-Lectures-React/
 ## 🚀 Installation & Usage
 
 ### 1. Prerequisites
-Ensure you have **FFmpeg** installed on your system's PATH. This is required for extracting audio from video files and chunking media.
+Because this project utilizes non-Python binaries and tools, you must manually install the following dependencies on your host system:
+* **FFmpeg**: Required for audio extraction and media processing. Must be added to your system's `PATH`.
+* **Node.js & NPM**: Required for building and running the Vite-powered React frontend.
+* **`uv`**: The fast Rust-based Python package manager (install via `pip install uv` or the official standalone installer).
 
 ### 2. Backend Setup
-Install Python dependencies:
+Synchronize and build the virtual environment using `uv`:
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
 ### 3. Running the Development Servers
 
 You can run both the FastAPI backend and the React frontend dev servers concurrently with a single command from the project root:
 ```bash
-python run.py
+uv run python run.py
 ```
 *(This script will automatically verify that frontend dependencies are installed, boot both servers, merge their console outputs with color-coded prefixes, and safely terminate all background processes on **Ctrl+C**).*
 
@@ -70,7 +74,7 @@ If you prefer running the servers in separate terminals for debugging, follow th
 
 #### A. Start the Backend Server
 ```bash
-python server.py
+uv run python server.py
 ```
 *(The API server runs on `http://127.0.0.1:8000`)*
 

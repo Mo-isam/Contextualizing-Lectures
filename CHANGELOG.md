@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 ---
 
 ## [Unreleased]
+### Added
+- Added presentation generation scripts under `scratch/` using `pptxgenjs` to render high-quality academic presentations.
+- Generated `Contextualizing_Lectures_Presentation.pptx` in the workspace root summarizing system architecture, video/audio pipelines, and UI.
+- Integrated visual workflow diagrams: overall 2x3 grid flowchart (Slide 3), horizontal sequence arrows (Slide 4), and a vertical semantic alignment chart (Slide 5).
+
+### Changed
+- Migrated python environment dependency management from flat `requirements.txt` to isolated virtual environment (`.venv`) using `uv` and PEP 621 compliant `pyproject.toml`.
+- Configured PyTorch package mapping inside `pyproject.toml` to target the CPU-optimized wheel repository, reducing setup size and install times.
+
 
 ## [1.1.4] - 2026-06-27
 ### Added
